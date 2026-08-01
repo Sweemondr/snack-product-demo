@@ -56,7 +56,7 @@ git commit -m "feat: describe the change"
 git push -u github feat/<your-topic>
 ```
 
-在 GitHub 发 Pull Request 合并；页面结构、视觉修正和交互逻辑尽量拆成独立 PR。合并前至少运行 `npm run lint && npm run build`。
+在 GitHub 发 Pull Request 合并；页面结构、视觉修正和交互逻辑尽量拆成独立 PR。合并前至少运行 `npm run lint && npm test`，并按 [CONTRIBUTING.md](./CONTRIBUTING.md) 检查受影响页面。仓库内的 GitHub Actions 会对 `main` 和每个 Pull Request 自动执行相同检查。
 
 ## 设计与交互依据
 
