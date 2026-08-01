@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { ProductPages, type ProductView } from "./product-pages";
 
 type IconName =
   | "plus" | "chat" | "task" | "bot" | "clock" | "grid" | "book" | "search"
@@ -60,14 +61,17 @@ function Avatar({ label, color }: { label: string; color: string }) {
   return <span className="avatar" style={{ background: color }}>{label}</span>;
 }
 
-function Sidebar() {
+function Sidebar({ onNavigate }: { onNavigate: (view: ProductView | "record") => void }) {
   return <aside className="sidebar">
-    <div className="brand">{/* eslint-disable-next-line @next/next/no-img-element */}<img src="/snack-logo.png" alt="Snack" /></div>
-    <button className="new-chat"><Icon name="plus" size={19} />新会话</button>
+    <div className="brand">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src="/snack-logo.png" alt="Snack" />
+    </div>
+    <button className="new-chat" onClick={() => onNavigate("home")}><Icon name="plus" size={19} />新会话</button>
     <button className="group-beta"><Icon name="users" size={17} /><span>发起群聊</span><em>实验中</em></button>
     <div className="side-rule" />
     <nav className="main-nav">
-      {navItems.map(([icon, label]) => <button key={label}><Icon name={icon} size={18} />{label}</button>)}
+      {navItems.map(([icon, label]) => <button key={label} onClick={() => onNavigate(({ "任务工作台": "taskhub", "智能体员工": "employees", "定时任务": "tasks", "应用": "apps", "知识库": "wiki" } as const)[label])}><Icon name={icon} size={18} />{label}</button>)}
     </nav>
     <div className="side-rule" />
     <div className="search-box"><Icon name="search" size={17} /><span>搜索会话...</span></div>
@@ -287,12 +291,21 @@ function CompleteStep({ onRestart }: { onRestart: () => void }) {
 
 export default function Home() {
   const [current, setCurrent] = useState(0);
+  const [view, setView] = useState<ProductView | "record">("record");
   useEffect(() => {
-    const step = Number(new URLSearchParams(window.location.search).get("step"));
-    if (!Number.isFinite(step) || step < 1 || step > 6) return;
-    const timer = window.setTimeout(() => setCurrent(step - 1), 0);
+    const timer = window.setTimeout(() => {
+      setCurrent(readInitialStep());
+      setView(readInitialView());
+    }, 0);
     return () => window.clearTimeout(timer);
   }, []);
+  const navigate = (next: ProductView | "record") => {
+    setView(next);
+    const url = new URL(window.location.href);
+    url.searchParams.set("view", next);
+    if (next !== "record") url.searchParams.delete("step");
+    window.history.pushState({}, "", url);
+  };
   const content = useMemo(() => {
     if (current === 0) return <SourceStep onNext={() => setCurrent(1)} />;
     if (current === 1) return <RecordingStep onNext={() => setCurrent(2)} />;
@@ -302,8 +315,10 @@ export default function Home() {
     return <CompleteStep onRestart={() => setCurrent(0)} />;
   }, [current]);
 
+  if (view !== "record") return <ProductPages view={view} go={navigate} />;
+
   return <main className="app-shell">
-    <Sidebar />
+    <Sidebar onNavigate={navigate} />
     <section className="workspace">
       <Header current={current} />
       <div className="workspace-body">
@@ -312,4 +327,18 @@ export default function Home() {
       </div>
     </section>
   </main>;
+}
+
+const productViews: Array<ProductView | "record"> = ["record", "home", "taskhub", "todos", "project", "task-detail", "employees", "skills", "tasks", "wiki", "apps", "record-library", "record-settings", "record-summary"];
+
+function readInitialView(): ProductView | "record" {
+  if (typeof window === "undefined") return "record";
+  const requested = new URLSearchParams(window.location.search).get("view") as ProductView | "record" | null;
+  return requested && productViews.includes(requested) ? requested : "record";
+}
+
+function readInitialStep(): number {
+  if (typeof window === "undefined") return 0;
+  const step = Number(new URLSearchParams(window.location.search).get("step"));
+  return Number.isFinite(step) && step >= 1 && step <= 6 ? step - 1 : 0;
 }
