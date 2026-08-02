@@ -68,6 +68,14 @@ test("keeps the complete product view inventory in source", async () => {
   assert.match(productPages, /Snack Record/);
   assert.match(productPages, /我的录音/);
   assert.match(productPages, /生成会议纪要/);
+  assert.match(productPages, /首次配置 Snack Record/);
+  assert.match(productPages, /snack-record-configured-v1/);
+  assert.match(productPages, /创建项目继续跟踪/);
+  assert.match(productPages, /将 3 个任务写入 Task Hub/);
+  assert.match(productPages, /开启会前提醒与简报/);
+  assert.match(productPages, /每一步都可跳过/);
+  assert.match(productCss, /pd-conversation-layout/);
+  assert.match(productCss, /pd-record-settings-entry/);
   assert.match(productPages, /任务工作台/);
   assert.match(productCss, /--pd-orange:#fe720a/);
   assert.match(layout, /title: "Snack · 产品全景协作 Demo"/);

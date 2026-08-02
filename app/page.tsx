@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { ProductPages, type ProductView } from "./product-pages";
 
 type IconName =
@@ -300,20 +300,22 @@ export default function Home() {
     return () => window.clearTimeout(timer);
   }, []);
   const navigate = (next: ProductView | "record") => {
-    setView(next);
+    const target = next === "record" && window.localStorage.getItem("snack-record-configured-v1") !== "true" ? "record-settings" : next;
+    setView(target);
     const url = new URL(window.location.href);
-    url.searchParams.set("view", next);
-    if (next !== "record") url.searchParams.delete("step");
+    url.searchParams.set("view", target);
+    if (target === "record-settings" && next === "record") url.searchParams.set("setup", "1");
+    else url.searchParams.delete("setup");
+    if (target !== "record") url.searchParams.delete("step");
     window.history.pushState({}, "", url);
   };
-  const content = useMemo(() => {
-    if (current === 0) return <SourceStep onNext={() => setCurrent(1)} />;
-    if (current === 1) return <RecordingStep onNext={() => setCurrent(2)} />;
-    if (current === 2) return <ReviewStep onNext={() => setCurrent(3)} onFinish={() => setCurrent(5)} />;
-    if (current === 3) return <ProjectStep onNext={() => setCurrent(4)} />;
-    if (current === 4) return <TasksStep onNext={() => setCurrent(5)} />;
-    return <CompleteStep onRestart={() => setCurrent(0)} />;
-  }, [current]);
+  let content: React.ReactNode;
+  if (current === 0) content = <SourceStep onNext={() => setCurrent(1)} />;
+  else if (current === 1) content = <RecordingStep onNext={() => navigate("record-summary")} />;
+  else if (current === 2) content = <ReviewStep onNext={() => setCurrent(3)} onFinish={() => setCurrent(5)} />;
+  else if (current === 3) content = <ProjectStep onNext={() => setCurrent(4)} />;
+  else if (current === 4) content = <TasksStep onNext={() => setCurrent(5)} />;
+  else content = <CompleteStep onRestart={() => setCurrent(0)} />;
 
   if (view !== "record") return <ProductPages view={view} go={navigate} />;
 
@@ -334,7 +336,8 @@ const productViews: Array<ProductView | "record"> = ["record", "home", "taskhub"
 function readInitialView(): ProductView | "record" {
   if (typeof window === "undefined") return "record";
   const requested = new URLSearchParams(window.location.search).get("view") as ProductView | "record" | null;
-  return requested && productViews.includes(requested) ? requested : "record";
+  if (requested && productViews.includes(requested)) return requested;
+  return window.localStorage.getItem("snack-record-configured-v1") === "true" ? "apps" : "record-settings";
 }
 
 function readInitialStep(): number {
