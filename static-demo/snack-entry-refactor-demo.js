@@ -3750,24 +3750,15 @@ function renderApps() {
       <div class="snack-apps-grid" role="list" aria-label="应用列表">
         <article class="snack-record-app-card ${state.snackRecordConfigured ? 'configured' : ''}" role="listitem">
           ${state.snackRecordConfigured ? `<button class="snack-record-card-settings" type="button" data-record-action="open-settings" aria-label="打开 Snack Record 设置" title="打开 Snack Record 设置"><i data-lucide="settings-2"></i></button>` : ''}
-          <div class="snack-record-card-brand">
-            <span class="snack-record-app-icon"><i data-lucide="mic-2"></i></span>
-            <div>
-              <small>SNACK APP</small>
-              <h3>Snack Record</h3>
-              <p>录下会议，把转写、纪要和后续跟进交给 Snack</p>
-            </div>
-          </div>
-          <div class="snack-record-card-features" aria-label="Snack Record 能力">
-            <span><i data-lucide="hard-drive"></i>本地录音</span>
-            <span><i data-lucide="captions"></i>实时转写</span>
-            <span><i data-lucide="sparkles"></i>会议纪要</span>
-          </div>
+          <span class="snack-record-app-icon"><i data-lucide="mic-2"></i></span>
+          <h3>Snack Record</h3>
+          <p>本地会议录音、转写与会议纪要</p>
+          ${state.snackRecordConfigured ? '' : '<small class="snack-record-first-use-copy"><i data-lucide="circle-1"></i>首次使用需配置</small>'}
           <footer>
             ${state.snackRecordConfigured ? `
-              <button class="snack-record-mic-action ${state.snackRecordActive ? 'active' : ''}" type="button" data-record-action="open-native" aria-label="${recordingActionLabel}" title="${recordingActionLabel}"><i data-lucide="mic-2"></i><span>${recordingActionLabel}</span></button>
-              <button class="secondary-button snack-record-library-action" type="button" data-record-action="open-library"><i data-lucide="folder-clock"></i>我的录音</button>
-            ` : `<div class="snack-record-first-use-copy"><i data-lucide="circle-1"></i><span>首次使用需完成一次本地资源检测和默认配置</span></div><button class="primary-button snack-record-setup-action" type="button" data-record-action="start-setup">${setupLabel}<i data-lucide="arrow-right"></i></button>`}
+              <button class="snack-record-mic-action ${state.snackRecordActive ? 'active' : ''}" type="button" data-record-action="open-native" aria-label="${recordingActionLabel}" title="${recordingActionLabel}"><i data-lucide="mic-2"></i></button>
+              <button class="secondary-button snack-record-library-action" type="button" data-record-action="open-library">我的录音</button>
+            ` : `<button class="primary-button snack-record-setup-action" type="button" data-record-action="start-setup">${setupLabel}</button>`}
           </footer>
         </article>
       </div>
