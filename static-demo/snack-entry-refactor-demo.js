@@ -191,6 +191,36 @@ const snackRecordCloudContextOptions = [
   },
 ];
 
+const snackRecordTaskCandidates = [
+  {
+    code: 'REC-001',
+    title: '完成 onboarding 引导稿',
+    owner: '陆铭',
+    dueDate: '2026-08-05',
+    dueLabel: '周三',
+    evidenceTime: '00:08:42',
+    desc: '完成新版 onboarding 引导稿，并准备 20% 流量实验所需的产品文案与页面说明。',
+  },
+  {
+    code: 'REC-002',
+    title: '补齐激活率数据口径',
+    owner: '林可',
+    dueDate: '2026-08-06',
+    dueLabel: '周四',
+    evidenceTime: '00:16:18',
+    desc: '补齐激活率统计口径与历史基线，为 onboarding 实验建立可对比的数据基准。',
+  },
+  {
+    code: 'REC-003',
+    title: '复盘转化与次日留存',
+    owner: '田晓柔',
+    dueDate: '2026-08-07',
+    dueLabel: '周五',
+    evidenceTime: '00:27:36',
+    desc: '复盘新版 onboarding 的实验转化与新用户次日留存，形成下一轮优化结论。',
+  },
+];
+
 const agents = [
   {
     name: 'Snack',
@@ -2429,7 +2459,7 @@ function renderIssueCard(issue) {
         <span>${issue.stage}</span>
         <strong>${issue.count}</strong>
       </div>
-      <div class="issue-meta"><span>${project.title}</span><span>${issue.owner}</span></div>
+      <div class="issue-meta"><span>${project.title}</span><span>${issue.owner}${issue.dueLabel ? ` · ${escapeHtml(issue.dueLabel)}` : ''}</span></div>
     </button>
   `;
 }
@@ -4052,14 +4082,17 @@ function renderSnackRecordContextPicker(disabled = false) {
           `).join('') : '<span class="snack-record-draft-empty">暂未添加项目上下文</span>'}
           ${disabled ? '' : `
             <button class="snack-record-draft-add" type="button" data-record-action="toggle-record-context-picker" aria-haspopup="listbox" aria-expanded="${state.snackRecordContextPickerOpen ? 'true' : 'false'}">
-              <i data-lucide="plus"></i>添加上下文<i data-lucide="chevron-down"></i>
+              <i data-lucide="plus"></i>添加上下文<i data-lucide="${state.snackRecordContextPickerOpen ? 'chevron-up' : 'chevron-down'}"></i>
             </button>
           `}
         </div>
         ${disabled ? '' : '<input id="snackRecordLocalContextInput" class="snack-record-local-context-input" type="file" data-record-local-context-input webkitdirectory directory multiple />'}
         ${!disabled && state.snackRecordContextPickerOpen ? `
           <section class="snack-record-draft-options snack-record-context-options" role="listbox" aria-label="可选择的项目上下文" aria-multiselectable="true">
-            <header><span>项目上下文</span><small>可多选</small></header>
+            <header>
+              <span>项目上下文</span>
+              <span class="snack-record-draft-options-actions"><small>可多选</small><button type="button" data-record-action="close-record-context-picker"><i data-lucide="check"></i>完成</button></span>
+            </header>
             <div class="snack-record-draft-option-group">
               <p>云端文件夹</p>
               ${snackRecordCloudContextOptions.map((context) => {
@@ -4121,13 +4154,16 @@ function renderSnackRecordMemberPicker(disabled = false) {
           `).join('')}
           ${disabled ? '' : `
             <button class="snack-record-draft-add" type="button" data-record-action="toggle-record-member-picker" aria-haspopup="listbox" aria-expanded="${state.snackRecordMemberPickerOpen ? 'true' : 'false'}">
-              <i data-lucide="user-plus"></i>添加成员<i data-lucide="chevron-down"></i>
+              <i data-lucide="user-plus"></i>添加成员<i data-lucide="${state.snackRecordMemberPickerOpen ? 'chevron-up' : 'chevron-down'}"></i>
             </button>
           `}
         </div>
         ${!disabled && state.snackRecordMemberPickerOpen ? `
           <section class="snack-record-draft-options snack-record-member-options" role="listbox" aria-label="人员与 Agent" aria-multiselectable="true">
-            <header><span>人员与 Agent</span><small>${options.length} 个结果</small></header>
+            <header>
+              <span>人员与 Agent</span>
+              <span class="snack-record-draft-options-actions"><small>${options.length} 个结果</small><button type="button" data-record-action="close-record-member-picker"><i data-lucide="check"></i>完成</button></span>
+            </header>
             <label class="snack-record-member-search"><i data-lucide="search"></i><input type="search" value="${escapeAttribute(state.snackRecordMemberQuery)}" data-record-member-search placeholder="搜索人员或 Agent" autocomplete="off" /></label>
             <div class="snack-record-draft-option-list">
               ${options.length ? options.map((member) => `
@@ -4154,14 +4190,12 @@ function toggleSnackRecordCloudContext(contextId) {
     ? selected.filter((item) => item.id !== context.id)
     : [...selected, { ...context }];
   state.snackRecordContextPickerOpen = true;
-  render();
-  scrollSnackRecordFollowup();
+  renderSnackRecordDraftUpdate();
 }
 
 function removeSnackRecordContext(contextId) {
   state.snackRecordFollowupContexts = state.snackRecordFollowupContexts.filter((context) => context.id !== contextId);
-  render();
-  scrollSnackRecordFollowup();
+  renderSnackRecordDraftUpdate();
 }
 
 function handleSnackRecordLocalContextSelection(input) {
@@ -4181,8 +4215,7 @@ function handleSnackRecordLocalContextSelection(input) {
   folders.forEach((context, id) => nextContexts.set(id, context));
   state.snackRecordFollowupContexts = [...nextContexts.values()];
   state.snackRecordContextPickerOpen = false;
-  render();
-  scrollSnackRecordFollowup();
+  renderSnackRecordDraftUpdate();
 }
 
 function selectSnackRecordMember(name) {
@@ -4191,23 +4224,51 @@ function selectSnackRecordMember(name) {
   state.snackRecordFollowupMembers = [...state.snackRecordFollowupMembers, member];
   state.snackRecordMemberQuery = '';
   state.snackRecordMemberPickerOpen = true;
-  render();
-  focusSnackRecordMemberSearch();
+  renderSnackRecordDraftUpdate({ focusMemberSearch: true });
 }
 
 function removeSnackRecordMember(name) {
   state.snackRecordFollowupMembers = state.snackRecordFollowupMembers.filter((member) => member.name !== name);
-  render();
-  scrollSnackRecordFollowup();
+  renderSnackRecordDraftUpdate();
 }
 
 function focusSnackRecordMemberSearch() {
   window.requestAnimationFrame(() => {
     const input = document.querySelector('[data-record-member-search]');
     if (!(input instanceof HTMLInputElement)) return;
-    input.focus();
+    input.focus({ preventScroll: true });
     input.setSelectionRange(input.value.length, input.value.length);
   });
+}
+
+function renderSnackRecordDraftUpdate({ focusMemberSearch = false } = {}) {
+  renderSnackRecordFollowupUpdate({ focusMemberSearch });
+}
+
+function renderSnackRecordFollowupUpdate({ focusMemberSearch = false, revealCurrentStep = false } = {}) {
+  const thread = document.querySelector('[data-record-followup-thread]');
+  const previousScrollTop = thread instanceof HTMLElement ? thread.scrollTop : null;
+  render();
+  const nextThread = document.querySelector('[data-record-followup-thread]');
+  if (previousScrollTop !== null && nextThread instanceof HTMLElement) {
+    nextThread.style.scrollBehavior = 'auto';
+    nextThread.scrollTop = Math.min(previousScrollTop, Math.max(0, nextThread.scrollHeight - nextThread.clientHeight));
+    window.requestAnimationFrame(() => {
+      if (!nextThread.isConnected) return;
+      nextThread.style.removeProperty('scroll-behavior');
+      if (!revealCurrentStep) return;
+      const currentStep = nextThread.querySelector('.snack-record-followup-message.is-current-step');
+      if (!(currentStep instanceof HTMLElement)) return;
+      const threadRect = nextThread.getBoundingClientRect();
+      const stepRect = currentStep.getBoundingClientRect();
+      const targetTop = Math.min(
+        nextThread.scrollHeight - nextThread.clientHeight,
+        nextThread.scrollTop + Math.max(0, stepRect.top - threadRect.top - 24),
+      );
+      if (targetTop > nextThread.scrollTop + 1) nextThread.scrollTo({ top: targetTop, behavior: 'smooth' });
+    });
+  }
+  if (focusMemberSearch) focusSnackRecordMemberSearch();
 }
 
 function createSnackRecordFollowupProject() {
@@ -4264,6 +4325,75 @@ function createSnackRecordFollowupProject() {
   return project;
 }
 
+function writeSnackRecordTasksToTaskHub() {
+  const project = getProjectById(state.snackRecordSummaryProjectId);
+  if (!project) return [];
+  const allocatedCodes = new Set(issues.map((issue) => issue.code));
+  const getAvailableCode = (preferredCode) => {
+    if (!allocatedCodes.has(preferredCode)) {
+      allocatedCodes.add(preferredCode);
+      return preferredCode;
+    }
+    let serial = 1;
+    let code = '';
+    do {
+      code = `REC-${String(serial).padStart(3, '0')}`;
+      serial += 1;
+    } while (allocatedCodes.has(code));
+    allocatedCodes.add(code);
+    return code;
+  };
+  const resolvedTasks = snackRecordTaskCandidates.map((task) => {
+    const existingIssue = issues.find((issue) => issue.projectId === project.id
+      && issue.issueType === '会议行动项'
+      && issue.title === task.title);
+    return { task, issue: existingIssue || null, code: existingIssue?.code || getAvailableCode(task.code) };
+  });
+  const createdIssues = [];
+  resolvedTasks.forEach(({ task, code, issue: existingIssue }) => {
+    let issue = existingIssue;
+    if (!issue) {
+      issue = {
+        code,
+        title: task.title,
+        projectId: project.id,
+        status: 'backlog',
+        issueType: '会议行动项',
+        owner: task.owner,
+        reviewer: currentUserName,
+        priority: 'P1',
+        stage: '待开始',
+        tag: '会议行动项',
+        desc: task.desc,
+        count: '0/3',
+        dueDate: task.dueDate,
+        dueLabel: task.dueLabel,
+        predecessor: null,
+        relatedTasks: resolvedTasks.filter((item) => item.code !== code).map((item) => item.code),
+        source: `AI 营销增长周会 ${task.evidenceTime}`,
+        nodes: [
+          { title: '任务执行', state: 'active', detail: `${task.owner} 负责推进，计划于${task.dueLabel}完成。` },
+          { title: '结果提交', state: 'waiting', detail: '完成后将结果与证据回写到当前任务。' },
+          { title: '会议复盘', state: 'waiting', detail: '在下次增长周会中复盘结果并确认后续动作。' },
+        ],
+        evidence: [`AI 营销增长周会原始转写 ${task.evidenceTime}`, '用户确认写入 Task Hub'],
+        artifacts: ['会议纪要', '原始转写证据'],
+        activity: [
+          ['Snack', `从会议纪要 ${task.evidenceTime} 提取行动项。`, '刚刚'],
+          [currentUserName, `确认写入 Task Hub；负责人：${task.owner}；截止：${task.dueLabel}。`, '刚刚'],
+        ],
+        comments: [],
+        logs: [`来源：AI 营销增长周会 ${task.evidenceTime}`, `负责人：${task.owner}`, `截止时间：${task.dueDate}`],
+      };
+      issues.push(issue);
+    }
+    if (!project.taskCodes.includes(issue.code)) project.taskCodes.push(issue.code);
+    createdIssues.push(issue);
+  });
+  project.health = '推进中';
+  return createdIssues;
+}
+
 function focusSnackRecordConversationComposer() {
   window.requestAnimationFrame(() => {
     const input = document.querySelector('textarea[name="record-summary-message"]');
@@ -4315,7 +4445,7 @@ function renderSnackRecordSummary() {
         ${renderSnackRecordMemberPicker(Boolean(answers.project))}
       </section>
       ${step === 2 ? renderSnackRecordFollowupActions([{ action: 'followup-project', label: '确认创建项目', icon: 'check', primary: true }, { action: 'followup-project-skip', label: '取消跟踪', icon: 'x' }]) : ''}
-    `));
+    `, step === 2 ? 'is-current-step' : ''));
   }
 
   if (answers.project) messages.push(renderSnackRecordUserMessage(answers.project));
@@ -4325,7 +4455,7 @@ function renderSnackRecordSummary() {
       <p>项目“${escapeHtml(projectName)}”已创建，并已带入会议纪要和成员。要同时创建对应的项目群聊吗？</p>
       <div class="snack-record-inline-result"><span><i data-lucide="folder-check"></i></span><div><strong>${escapeHtml(projectName)}</strong><small>会议纪要已写入项目上下文</small></div><em>已创建</em></div>
       ${step === 3 ? renderSnackRecordFollowupActions([{ action: 'followup-group', label: '创建项目群聊', icon: 'messages-square', primary: true }, { action: 'followup-group-skip', label: '暂不创建群聊' }]) : ''}
-    `));
+    `, step === 3 ? 'is-current-step' : ''));
   }
 
   if (answers.group) messages.push(renderSnackRecordUserMessage(answers.group));
@@ -4335,7 +4465,7 @@ function renderSnackRecordSummary() {
       <p>${answers.group === '创建项目群聊' ? '项目群聊已经建立，成员已加入。' : '这次暂不创建群聊。'} 我还识别到 3 个行动项，需要写入 Task Hub 吗？</p>
       <div class="snack-record-task-preview"><div><span>1</span><strong>完成 onboarding 引导稿</strong><em>陆铭 · 周三</em></div><div><span>2</span><strong>补齐激活率数据口径</strong><em>林可 · 周四</em></div><div><span>3</span><strong>复盘转化与次日留存</strong><em>田晓柔 · 周五</em></div></div>
       ${step === 4 ? renderSnackRecordFollowupActions([{ action: 'followup-tasks', label: '将 3 个任务写入 Task Hub', icon: 'list-checks', primary: true }, { action: 'followup-tasks-skip', label: '只保留在纪要中' }]) : ''}
-    `));
+    `, step === 4 ? 'is-current-step' : ''));
   }
 
   if (answers.tasks) messages.push(renderSnackRecordUserMessage(answers.tasks));
@@ -4345,7 +4475,7 @@ function renderSnackRecordSummary() {
       <p>${answers.tasks === '将 3 个任务写入 Task Hub' ? '3 个任务已创建并分配负责人。' : '行动项只保留在会议纪要中。'} 这次会议还明确了核心目标和两个指标，要持续跟踪吗？</p>
       <section class="snack-record-metrics-card"><header><span><i data-lucide="target"></i></span><div><small>核心目标</small><strong>提升新用户首日完成率</strong></div></header><div><span><small>onboarding 完成率</small><strong>42% <em>目标 55%</em></strong></span><span><small>新用户次日留存</small><strong>31% <em>目标 38%</em></strong></span></div></section>
       ${step === 5 ? renderSnackRecordFollowupActions([{ action: 'followup-metrics', label: '持续跟踪目标与指标', icon: 'chart-no-axes-combined', primary: true }, { action: 'followup-metrics-skip', label: '暂不跟踪指标' }]) : ''}
-    `));
+    `, step === 5 ? 'is-current-step' : ''));
   }
 
   if (answers.metrics) messages.push(renderSnackRecordUserMessage(answers.metrics));
@@ -4355,7 +4485,7 @@ function renderSnackRecordSummary() {
       <p>${answers.metrics === '持续跟踪目标与指标' ? '核心目标和指标已加入项目首页。' : '这次不持续跟踪指标。'} 最后，要在下次会前提醒成员，并把项目进展整理成一份会前简报吗？</p>
       <div class="snack-record-reminder-card"><span><i data-lucide="calendar-clock"></i></span><div><strong>下次增长周会 · 8 月 9 日 10:00</strong><small>会前 30 分钟提醒 · 自动汇总任务与指标变化</small></div></div>
       ${step === 6 ? renderSnackRecordFollowupActions([{ action: 'followup-reminder', label: '开启提醒并发送会前简报', icon: 'bell-ring', primary: true }, { action: 'followup-reminder-skip', label: '暂不开启提醒' }]) : ''}
-    `));
+    `, step === 6 ? 'is-current-step' : ''));
   }
 
   if (answers.reminder) messages.push(renderSnackRecordUserMessage(answers.reminder));
@@ -4365,7 +4495,7 @@ function renderSnackRecordSummary() {
     messages.push(renderSnackRecordAssistantMessage(`
       <div class="snack-record-followup-finished"><span><i data-lucide="circle-check-big"></i></span><div><strong>${savedOnly ? '会议纪要已保留在当前会话' : '这次会议的跟进配置已完成'}</strong><p>${savedOnly ? '你可以继续询问纪要内容，也可以之后再创建项目。' : `项目“${escapeHtml(projectName)}”已经带着你确认的配置开始运行；未开启的配置仍可之后添加。`}</p></div></div>
       ${renderSnackRecordFollowupActions(savedOnly ? [{ action: 'back-library', label: '返回我的录音', icon: 'folder-clock', primary: true }] : [{ action: 'summary-to-project', label: '打开项目查看', icon: 'arrow-right', primary: true }, { action: 'back-library', label: '返回我的录音' }])}
-    `));
+    `, step === 7 ? 'is-current-step' : ''));
   }
 
   return `
@@ -4685,8 +4815,7 @@ function scrollSnackRecordFollowup() {
 function setSnackRecordFollowupAnswer(key, value, nextStep) {
   state.snackRecordFollowupAnswers[key] = value;
   state.snackRecordFollowupStep = nextStep;
-  render();
-  scrollSnackRecordFollowup();
+  renderSnackRecordFollowupUpdate({ revealCurrentStep: true });
 }
 
 function importSnackRecordMock() {
@@ -4889,8 +5018,12 @@ function handleSnackRecordAction(target) {
   if (action === 'toggle-record-context-picker') {
     state.snackRecordContextPickerOpen = !state.snackRecordContextPickerOpen;
     state.snackRecordMemberPickerOpen = false;
-    render();
-    scrollSnackRecordFollowup();
+    renderSnackRecordDraftUpdate();
+    return;
+  }
+  if (action === 'close-record-context-picker') {
+    state.snackRecordContextPickerOpen = false;
+    renderSnackRecordDraftUpdate();
     return;
   }
   if (action === 'toggle-record-cloud-context') return toggleSnackRecordCloudContext(target.dataset.recordContextId);
@@ -4899,9 +5032,13 @@ function handleSnackRecordAction(target) {
     state.snackRecordMemberPickerOpen = !state.snackRecordMemberPickerOpen;
     state.snackRecordContextPickerOpen = false;
     state.snackRecordMemberQuery = '';
-    render();
-    if (state.snackRecordMemberPickerOpen) focusSnackRecordMemberSearch();
-    else scrollSnackRecordFollowup();
+    renderSnackRecordDraftUpdate({ focusMemberSearch: state.snackRecordMemberPickerOpen });
+    return;
+  }
+  if (action === 'close-record-member-picker') {
+    state.snackRecordMemberPickerOpen = false;
+    state.snackRecordMemberQuery = '';
+    renderSnackRecordDraftUpdate();
     return;
   }
   if (action === 'select-record-member') return selectSnackRecordMember(target.dataset.recordMember);
@@ -4921,7 +5058,12 @@ function handleSnackRecordAction(target) {
   }
   if (action === 'followup-group') return setSnackRecordFollowupAnswer('group', '创建项目群聊', 4);
   if (action === 'followup-group-skip') return setSnackRecordFollowupAnswer('group', '暂不创建群聊', 4);
-  if (action === 'followup-tasks') return setSnackRecordFollowupAnswer('tasks', '将 3 个任务写入 Task Hub', 5);
+  if (action === 'followup-tasks') {
+    const createdIssues = writeSnackRecordTasksToTaskHub();
+    setSnackRecordFollowupAnswer('tasks', '将 3 个任务写入 Task Hub', 5);
+    showToast(`已将 ${createdIssues.length} 个会议行动项写入 Task Hub`);
+    return;
+  }
   if (action === 'followup-tasks-skip') return setSnackRecordFollowupAnswer('tasks', '只保留在纪要中', 5);
   if (action === 'followup-metrics') return setSnackRecordFollowupAnswer('metrics', '持续跟踪目标与指标', 6);
   if (action === 'followup-metrics-skip') return setSnackRecordFollowupAnswer('metrics', '暂不跟踪指标', 6);
@@ -7642,9 +7784,24 @@ function renderIcons() {
 
 function handleBodyClick(event) {
   if (!(event.target instanceof Element)) return;
+  const clickedInsideSnackRecordPicker = event.target.closest('[data-record-context-picker], [data-record-member-picker]');
+  const shouldCloseSnackRecordPicker = (state.snackRecordContextPickerOpen || state.snackRecordMemberPickerOpen)
+    && !clickedInsideSnackRecordPicker;
   const snackRecordTarget = event.target.closest('[data-record-action]');
   if (snackRecordTarget) {
+    if (shouldCloseSnackRecordPicker) {
+      state.snackRecordContextPickerOpen = false;
+      state.snackRecordMemberPickerOpen = false;
+      state.snackRecordMemberQuery = '';
+    }
     handleSnackRecordAction(snackRecordTarget);
+    return;
+  }
+  if (shouldCloseSnackRecordPicker) {
+    state.snackRecordContextPickerOpen = false;
+    state.snackRecordMemberPickerOpen = false;
+    state.snackRecordMemberQuery = '';
+    renderSnackRecordDraftUpdate();
     return;
   }
   const meetingTarget = event.target.closest('[data-meeting-setup-action], [data-meeting-action], [data-meeting-select], [data-meeting-date], [data-meeting-week], [data-meeting-evidence], .meeting-demo-controls [data-demo-device]');
@@ -7943,8 +8100,7 @@ document.body.addEventListener('keydown', (event) => {
     state.snackRecordContextPickerOpen = false;
     state.snackRecordMemberPickerOpen = false;
     state.snackRecordMemberQuery = '';
-    render();
-    scrollSnackRecordFollowup();
+    renderSnackRecordDraftUpdate();
     return;
   }
   if (event.key === 'Escape' && state.projectMemberPickerOpen) {

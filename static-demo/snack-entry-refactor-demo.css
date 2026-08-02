@@ -8104,6 +8104,10 @@ body[data-demo-device="mobile"] .project-chat-main > .composer {
 .snack-record-draft-options { position: relative; z-index: 2; width: 100%; overflow: hidden; margin-top: 8px; border: 1px solid #dfe5ec; border-radius: 13px; background: white; box-shadow: 0 12px 28px rgba(15, 23, 42, 0.1); }
 .snack-record-draft-options > header { min-height: 38px; display: flex; align-items: center; justify-content: space-between; padding: 0 12px; border-bottom: 1px solid #edf0f3; color: #344054; font-size: 11px; font-weight: 800; }
 .snack-record-draft-options > header small { color: #98a2b3; }
+.snack-record-draft-options-actions { display: inline-flex; align-items: center; gap: 10px; }
+.snack-record-draft-options-actions button { min-height: 26px; display: inline-flex; align-items: center; gap: 4px; padding: 0 8px; border-radius: 7px; color: var(--brand); background: var(--brand-soft); font-size: 10px; font-weight: 800; }
+.snack-record-draft-options-actions button:hover { background: #ffe7d6; }
+.snack-record-draft-options-actions button svg { width: 12px; }
 .snack-record-draft-option-group { padding: 8px; }
 .snack-record-draft-option-group + .snack-record-draft-option-group { border-top: 1px solid #edf0f3; }
 .snack-record-draft-option-group > p { margin: 0 4px 6px; color: #98a2b3; font-size: 9px; font-weight: 800; text-transform: uppercase; }
