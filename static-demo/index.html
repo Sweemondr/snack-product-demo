@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Snack 项目会议日程 Demo</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="./snack-entry-refactor-demo.css?v=snack-record-draft-pickers-v10" />
+    <script src="./vendor/lucide.min.js" defer></script>
+    <script src="./snack-entry-refactor-demo.js?v=snack-record-draft-pickers-v10" defer></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Snack 入口">
+        <header class="brand">
+          <img src="./assets/logo-title.png" alt="Snack" />
+        </header>
+
+        <nav class="entry-nav" aria-label="一级入口">
+          <button class="nav-action" data-view="chat">
+            <i data-lucide="plus"></i>
+            <span>新建会话</span>
+          </button>
+
+          <button class="nav-row active" data-view="tasks">
+            <i data-lucide="clipboard-list"></i>
+            <span>任务工作台</span>
+          </button>
+          <button class="nav-row" data-view="agents">
+            <i data-lucide="bot"></i>
+            <span>智能体员工</span>
+          </button>
+          <button class="nav-row" data-view="apps">
+            <i data-lucide="app-window"></i>
+            <span>应用</span>
+          </button>
+        </nav>
+
+        <section class="sidebar-list project-history" id="projectHistory" aria-label="历史会话"></section>
+
+        <footer class="sidebar-footer">
+          <img src="./assets/user.png" alt="" />
+          <span>
+            <strong>田晓柔</strong>
+            <small>Snack 产品</small>
+          </span>
+        </footer>
+      </aside>
+
+      <main class="workbench">
+        <header class="topbar">
+          <div class="topbar-main">
+            <nav class="secondary-tabs" id="secondaryTabs" aria-label="二级入口" hidden></nav>
+          </div>
+          <div class="topbar-actions" id="topbarActions"></div>
+        </header>
+
+        <section class="content-grid">
+          <section class="main-surface" id="mainSurface"></section>
+        </section>
+      </main>
+    </div>
+
+    <div class="toast" id="toast" hidden></div>
+    <section class="meeting-demo-controls" id="meetingDemoControls" aria-label="会议 Demo 控制"></section>
+  </body>
+</html>
