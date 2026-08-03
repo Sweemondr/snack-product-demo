@@ -12,23 +12,33 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 5
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: 22.13.0
-          cache: npm
+      - name: Check required static files
+        run: |
+          test -f index.html
+          test -f snack-entry-refactor-demo.js
+          test -f snack-entry-refactor-demo.css
+          test -f assets/logo-title.png
+          test -f assets/user.png
+          test -f vendor/lucide.min.js
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Check JavaScript syntax
+        run: node --check snack-entry-refactor-demo.js
 
-      - name: Lint
-        run: npm run lint
-
-      - name: Build and test
-        run: npm test
+      - name: Smoke-test static server
+        run: |
+          python3 -m http.server 8765 >/tmp/snack-static-demo.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid"' EXIT
+          for attempt in 1 2 3 4 5; do
+            if curl --fail --silent http://127.0.0.1:8765/ >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          exit 1
