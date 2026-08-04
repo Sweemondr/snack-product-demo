@@ -82,6 +82,7 @@ const state = {
   draftSerial: 1,
   projectSerial: 1,
   boardSidebarOpen: false,
+  projectDetailOpen: true,
   memberSidebarOpen: false,
   memberPanelTab: 'members',
   memberManagerOpen: false,
@@ -143,6 +144,7 @@ const state = {
   snackRecordSummaryStatus: 'ready',
   snackRecordFollowupStep: 0,
   snackRecordFollowupAnswers: {},
+  snackRecordProjectDetailOpen: false,
   snackRecordFollowupProjectName: 'AI 营销增长系统',
   snackRecordFollowupContexts: [],
   snackRecordContextPickerOpen: false,
@@ -150,11 +152,13 @@ const state = {
   snackRecordMemberQuery: '',
   snackRecordMemberPickerOpen: false,
   snackRecordResourceStatus: savedSnackRecordConfig ? 'complete' : 'unknown',
+  snackRecordSetupReturnView: 'apps',
   snackRecordConfig: { ...(savedSnackRecordConfig?.config || snackRecordDefaultConfig) },
   snackRecordConfigDraft: { ...(savedSnackRecordConfig?.config || snackRecordDefaultConfig) },
   meetingSetupCompletedProjects: loadMeetingSetupCompletedProjects(),
   meetingSetupDrafts: {},
   demoDevice: 'desktop',
+  draggedConversation: null,
 };
 
 const currentUserName = '田晓柔';
@@ -329,193 +333,8 @@ const projectFolders = [
       ['任务回写', '行动项需确认负责人和截止时间后才创建任务。'],
     ],
     taskCodes: [],
-    sessions: [
-      {
-        id: 'product-weekly-20260731',
-        title: '产品周会｜07-31',
-        with: 'Snack',
-        updated: '刚刚',
-        icon: 'sparkles',
-        messages: [
-          ['Snack', '产品周会将在 1 小时后开始。我已经汇总项目任务、群聊和上次会议遗留事项。', '15:00', [{ type: 'meetingBrief', meetingId: 'product-weekly-20260731' }]],
-        ],
-      },
-      {
-        id: 'weekly-meeting-setup',
-        title: '产品周会配置',
-        with: 'Snack',
-        updated: '今天',
-        messages: [
-          ['田晓柔', '把每周五 16:00 的产品周会放到这个项目里，提前 1 小时提醒我。', '09:18'],
-          ['Snack', '已创建每周五的产品周会。我会在会前汇总项目任务、群聊结论和上次未完成事项，到点后询问是否开始录音。', '09:18', [{ type: 'meetingSchedule', label: '查看会议日程' }]],
-          ['田晓柔', '参会人先放我、小贝、小林和产品设计 Agent。纪要先只发给我，任务要我确认后再创建。', '09:20'],
-          ['Snack', '已记住：日程对项目成员可见；录音、转写和纪要默认仅你可见，分享范围由你会后确认。', '09:20'],
-        ],
-      },
-    ],
-    groupMessages: [
-      ['田晓柔', '以后产品周会都在这个项目里跟踪。', '09:15'],
-      ['Snack', '已建立产品周会日程。下一场是今天 16:00，我会提前 1 小时把未完成任务和风险发给你。', '09:16', [{ type: 'meetingSchedule', label: '打开项目日程' }]],
-    ],
-  },
-  {
-    id: 'ads-crane-july',
-    title: '7月吊车投放监控',
-    summary: '存量投放盯盘与持续策略优化',
-    scenario: 'AI 投放',
-    updated: '现在',
-    createdAt: 3,
-    participating: true,
-    objective: '7月微信商端投放入驻达到100人，注册率达到50%',
-    health: '需关注',
-    agents: ['Snack', '投放监控 Agent', '数据归因 Agent', '策略优化 Agent'],
-    members: ['田晓柔', '投放负责人-阿七', '素材负责人-小雨', '数据负责人-陈晨'],
-    rememberedPeople: [
-      ['投放负责人-阿七', '预算、计划调整和平台操作'],
-      ['素材负责人-小雨', '素材替换、脚本和落地页信息'],
-      ['数据负责人-陈晨', '线索质量、转化口径和数据校验'],
-    ],
-    monitoringType: 'paid_media',
-    monitoringRules: [
-      { metric: '入驻人数', operator: '≥', value: '100', unit: '人' },
-      { metric: '注册率', operator: '≥', value: '50', unit: '%' },
-    ],
-    pushRule: '投放运营：入驻人数 ≥ 100 人；注册率 ≥ 50%',
-    operatingRules: [
-      ['入驻人数', '≥ 100 人'],
-      ['注册率', '≥ 50%'],
-    ],
-    taskCodes: ['ADS-001', 'ADS-002', 'ADS-003'],
-    sessions: [
-      {
-        id: 'snack-setup',
-        title: '项目创建与团队确认',
-        with: 'Snack',
-        updated: '今天',
-        messages: [
-          ['田晓柔', '建一个7月吊车投放监控项目。', '09:20'],
-          ['Snack', '项目已创建。我先记住这个项目是围绕吊车投放做持续盯盘，不需要你填写配置。你希望重点盯什么？', '09:20'],
-          ['田晓柔', '重点看线索成本和消耗异常，素材衰退也要提醒。', '09:22'],
-          ['Snack', '明白。要不要我为这个项目创建投放监控 Agent 团队，并把监控结果同步到项目群？', '09:23'],
-        ],
-      },
-      {
-        id: 'ads-mcp',
-        title: 'MCP 数据接入校验',
-        with: '投放监控 Agent',
-        updated: '今天',
-        messages: [
-          ['投放监控 Agent', '巨量、快手、广点通 MCP 已可读。写操作需要投放负责人确认后执行。', '10:02'],
-          ['田晓柔', '先只做读和操作建议，执行动作需要人确认。', '10:04'],
-        ],
-      },
-      {
-        id: 'ads-material',
-        title: '素材衰退复盘',
-        with: '策略优化 Agent',
-        updated: '今天',
-        messages: [
-          ['策略优化 Agent', '近 3 天点击率下滑集中在两组老素材，建议优先替换吊车工况对比素材。', '10:28'],
-          ['田晓柔', '先给小雨一个素材替换清单，不要直接改计划。', '10:30'],
-        ],
-      },
-    ],
-    groupMessages: [
-      ['田晓柔', '建一个7月吊车投放监控项目。', '09:20'],
-      ['Snack', '项目已创建。我会先问清楚你要在这个项目里做什么，再帮你创建 Agent 团队、项目群和首个跟踪任务。', '09:20'],
-      ['田晓柔', '重点盯线索成本、消耗异常和素材衰退。', '09:22'],
-      ['Snack', '已记住目标。要不要创建投放监控 Agent 团队？团队包括投放监控、数据归因和策略优化三个角色。', '09:23'],
-      ['田晓柔', '可以。结果推到项目群里。', '09:24'],
-      ['Snack', '项目群已准备。请告诉我群里的人和职责，我会记住他们，后续分配任务时自动 @ 相关负责人。', '09:25'],
-      ['田晓柔', '阿七负责投放，小雨负责素材，陈晨负责数据。', '09:26'],
-      ['Snack', '已记住。现在我会创建第一个任务：线索成本异常监控与策略调整；监控结果每天 10:00 推送到群里，高风险异常实时提醒。', '09:27'],
-      ['投放监控 Agent', '今日异常：快手吊车计划线索成本较 7 日均值上升 28%，素材点击率连续 3 天下滑。已完成异常定位和执行方案，请 @田晓柔 确认。', '10:10'],
-      ['投放监控 Agent', '@田晓柔 执行前需要你的确认。你可以直接确认，或说明需要修改的地方，我会重新分析并再次发起确认。', '10:12', [{ type: 'confirmationCard', issueCode: 'ADS-001', version: 1 }]],
-      ['投放监控 Agent', '其他项目成员也会同步看到这条确认请求，但只能等待指定审核人处理。', '10:12', [{ type: 'confirmationCard', issueCode: 'ADS-001', version: 1, viewAs: 'observer' }]],
-    ],
-  },
-  {
-    id: 'dev-stock-warning',
-    title: '库存不足提示研发项目',
-    summary: '从产品脑暴到 PRD、HTML 原型与研发交付',
-    scenario: '研发工作流',
-    updated: '今天',
-    createdAt: 2,
-    participating: true,
-    objective: '把订单详情页库存不足提示从想法整理成符合研发规范的 PRD、HTML 原型，并推进到上线验收。',
-    health: '正常',
-    agents: ['Snack', '产品设计 Agent', '研发交付 Agent', 'QA Agent'],
-    members: ['田晓柔', '产品设计 Agent', '前端工程师-小贝', 'QA-小林'],
-    rememberedPeople: [
-      ['田晓柔', '产品判断、PRD 和验收口径确认'],
-      ['前端工程师-小贝', '前端实现和 PR 处理'],
-      ['QA-小林', '测试用例、E2E 和验收报告'],
-    ],
-    pushRule: '关键节点进入 review 时同步项目群。',
-    operatingRules: [
-      ['节点同步', '任务进入 review 时同步到项目群。'],
-      ['人工确认', '产品口径和技术兼容范围由田晓柔确认。'],
-      ['阶段推进', '当前节点审核通过后，下一执行节点自动启动。'],
-      ['结果回写', 'PRD、原型、代码和验收结果统一沉淀到任务详情。'],
-    ],
-    taskCodes: ['DEV-100', 'DEV-101'],
-    sessions: [
-      {
-        id: 'product-brainstorm',
-        title: '产品脑暴与原型',
-        with: 'Snack',
-        updated: '今天',
-        messages: [
-          ['田晓柔', '做一个订单详情页库存不足提示项目。', '11:10'],
-          ['Snack', '项目已创建。你可以先和我脑暴，我会把讨论沉淀成 PRD、BDD 和 HTML 原型。', '11:10'],
-          ['田晓柔', '先补库存不足、预售、部分发货三个场景。', '11:13'],
-          ['Snack', '已更新 PRD 和 HTML 原型草稿。你可以直接说要改哪里，我会在对话里更新产物。', '11:16'],
-        ],
-      },
-    ],
-    groupMessages: [
-      ['田晓柔', '做一个订单详情页库存不足提示项目。', '11:10'],
-      ['Snack', '项目已创建。我们先在项目聊天里脑暴，确认后再创建研发交付任务。', '11:10'],
-      ['田晓柔', '需要输出 PRD 和 HTML 原型，符合研发规范后再进入研发。', '11:12'],
-      ['Snack', '已生成 PRD、BDD 和 HTML 原型草稿。确认后我会创建研发交付任务，并拉起产品设计、技术方案、代码实现、测试执行和审核上线节点。', '11:18'],
-      ['研发交付 Agent', 'DEV-100 已进入技术方案 review，等待产品确认接口兼容范围。', '13:40'],
-    ],
-  },
-  {
-    id: 'task-hub-refactor',
-    title: 'Snack Task Hub 入口重构',
-    summary: '通用任务看板与项目文件夹体验',
-    scenario: '产品设计',
-    updated: '昨天',
-    createdAt: 1,
-    participating: false,
-    objective: '统一项目、群聊、任务、Agent 和上下文入口。',
-    health: '正常',
-    agents: ['Snack', '产品设计 Agent', '前端工程师 Agent'],
-    members: ['田晓柔', '产品设计 Agent', '前端工程师 Agent'],
-    rememberedPeople: [['田晓柔', '产品决策'], ['前端工程师 Agent', '前端 demo 实现']],
-    pushRule: '里程碑同步项目群。',
-    operatingRules: [
-      ['里程碑同步', '关键里程碑完成后同步到项目群。'],
-      ['评审确认', '高保真页面完成后由项目成员统一评审。'],
-      ['任务流转', '所有执行工作进入任务看板并保留节点记录。'],
-    ],
-    taskCodes: ['SNK-201'],
-    sessions: [
-      {
-        id: 'ia',
-        title: '入口信息架构确认',
-        with: '产品设计 Agent',
-        updated: '昨天',
-        messages: [
-          ['产品设计 Agent', '项目像 ChatGPT Projects，任务看板固定状态，流程节点放在任务详情。', '昨天'],
-        ],
-      },
-    ],
-    groupMessages: [
-      ['田晓柔', 'Task Hub 不要变成投放垂直工具，投放和研发都只是场景。', '昨天'],
-      ['Snack', '已调整为同一套状态看板 + 项目流程节点。', '昨天'],
-    ],
+    sessions: [],
+    groupMessages: [],
   },
 ];
 
@@ -740,30 +559,7 @@ const issues = [
   },
 ];
 
-const looseSessions = [
-  {
-    id: 'task-hub-status',
-    title: '今天 Task Hub 哪些任务需要我看',
-    updated: '今天',
-    updatedAt: 2,
-    agent: 'Snack',
-    messages: [
-      ['田晓柔', '今天 Task Hub 哪些任务需要我看？', '今天'],
-      ['Snack', 'ADS-001 等待投放负责人确认策略；DEV-100 等待你确认老订单提示口径；SNK-201 等待 demo 高保真 review。', '今天'],
-    ],
-  },
-  {
-    id: 'ads-question',
-    title: '吊车投放为什么成本涨了',
-    updated: '今天',
-    updatedAt: 1,
-    agent: '投放监控 Agent',
-    messages: [
-      ['田晓柔', '吊车投放为什么成本涨了？', '今天'],
-      ['投放监控 Agent', '主要是快手两组素材衰退和预算节奏偏快，落地页转化暂时正常。', '今天'],
-    ],
-  },
-];
+const looseSessions = [];
 
 const resources = [
   { type: 'skill', title: '投放异常归因', desc: '读取平台 MCP 数据，生成异常摘要、原因链路和策略建议。' },
@@ -998,6 +794,8 @@ let snackRecordSetupTimerId = null;
 const snackRecordTranscriptionTimers = new Map();
 let snackRecordSummaryTimerId = null;
 let snackRecordSearchTimerId = null;
+let conversationPointerDrag = null;
+let suppressConversationClick = false;
 
 const mainSurface = document.querySelector('#mainSurface');
 const secondaryTabs = document.querySelector('#secondaryTabs');
@@ -1022,6 +820,7 @@ function setView(view) {
   state.agentMenuOpen = false;
   state.logDocIssue = null;
   state.boardSidebarOpen = false;
+  state.projectDetailOpen = true;
   state.memberSidebarOpen = false;
   state.taskFilterOpen = false;
   if (view === 'project' && !state.activeSession) state.activeSession = 'group';
@@ -1096,14 +895,6 @@ function getSecondaryTabs() {
     return [
       { value: 'projects', label: '状态看板', active: state.view !== 'projectSchedule' && state.taskTab === 'projects', attr: 'data-task-tab' },
       {
-        value: 'schedule',
-        label: '会议日程',
-        badge: getUpcomingMeetingCount(state.activeProject || 'snack-product-iteration'),
-        badgeLabel: `${getUpcomingMeetingCount(state.activeProject || 'snack-product-iteration')} 场待开始会议`,
-        active: state.view === 'projectSchedule',
-        attr: 'data-task-tab',
-      },
-      {
         value: 'todos',
         label: '我的待办',
         badge: getPendingConfirmationIssues().length,
@@ -1149,9 +940,18 @@ function renderTopbarActions() {
 }
 
 function renderProjectHistory() {
+  const looseConversationList = getSortedLooseSessions();
   projectHistory.innerHTML = `
     <div class="section-title dialogue-title">对话</div>
-    <div class="loose-session-list">${getSortedLooseSessions().map(renderLooseSession).join('')}</div>
+    <div class="loose-session-list conversation-drop-zone ${looseConversationList.length ? '' : 'empty'}" data-conversation-drop-zone="loose" aria-label="未归入项目的对话">
+      ${looseConversationList.length
+        ? looseConversationList.map(renderLooseSession).join('')
+        : `<div class="conversation-drop-empty">
+            <i data-lucide="message-square"></i>
+            <span>暂无对话</span>
+            <small>可将项目内对话拖到这里</small>
+          </div>`}
+    </div>
     <div class="sidebar-section-header">
       <div class="section-title">项目</div>
       <button class="sidebar-project-create" data-create-project>
@@ -1171,7 +971,7 @@ function renderHistoryProject(project) {
   const menuOpen = state.openProjectMenuId === project.id;
   const createMenuOpen = state.openProjectCreateMenuId === project.id;
   return `
-    <section class="history-project ${expanded ? 'expanded' : ''} ${project.pinnedAt ? 'pinned-project' : ''}">
+    <section class="history-project conversation-drop-zone ${expanded ? 'expanded' : ''} ${project.pinnedAt ? 'pinned-project' : ''}" data-conversation-drop-project="${project.id}">
       <div class="history-project-row">
         ${renaming ? `
           <div class="history-project-title active renaming">
@@ -1275,8 +1075,9 @@ function renderProjectSessions(project) {
 }
 
 function renderHistorySession(project, session) {
+  const movable = !session.pinned;
   return `
-    <button class="history-session ${session.pinned ? 'pinned' : ''} ${session.active ? 'active' : ''}" data-project-session="${project.id}:${session.id}">
+    <button class="history-session ${session.pinned ? 'pinned' : ''} ${session.active ? 'active' : ''}" data-project-session="${project.id}:${session.id}" ${movable ? `draggable="true" data-conversation-origin="project" data-conversation-id="${session.id}" data-conversation-project="${project.id}" title="拖拽可移动到其他项目或移出项目"` : ''}>
       <i data-lucide="${session.icon || (session.pinned ? 'messages-square' : 'message-square')}"></i>
       <span>${session.title}</span>
       ${session.updated ? `<small>${session.updated}</small>` : ''}
@@ -1293,11 +1094,11 @@ function renderHistoryMore(project, expanded, hiddenCount) {
 }
 
 function renderLooseSession(session) {
-  const active = session.kind === 'recordSummary'
+  const active = ['recordSummary', 'record-summary'].includes(session.kind)
     ? state.view === 'recordSummary' && state.snackRecordSummaryId === session.recordingId
     : state.view === 'loose' && state.activeLooseSession === session.id;
   return `
-    <button class="loose-session ${active ? 'active' : ''}" data-loose-session="${session.id}">
+    <button class="loose-session ${active ? 'active' : ''}" data-loose-session="${session.id}" draggable="true" data-conversation-origin="loose" data-conversation-id="${session.id}" title="拖拽可移入项目">
       <span>${session.title}</span>
       <small>${session.updated}</small>
     </button>
@@ -1328,7 +1129,8 @@ function getProjectCreatedAt(project) {
 
 function getSortedLooseSessions() {
   const summaryRecording = snackRecordings.find((item) => item.id === state.snackRecordSummaryId);
-  const summarySession = summaryRecording && !state.snackRecordSummaryProjectId ? [{
+  const summarySessionId = summaryRecording ? `record-summary-${summaryRecording.id}` : null;
+  const summarySession = summaryRecording && !state.snackRecordSummaryProjectId && !looseSessions.some((item) => item.id === summarySessionId) ? [{
     id: `record-summary-${summaryRecording.id}`,
     title: '会议纪要｜AI 营销增长周会',
     updated: '刚刚',
@@ -1344,6 +1146,293 @@ function getLooseSessionUpdatedAt(session) {
   if (Number(session.updatedAt)) return Number(session.updatedAt);
   const labelRank = { '刚刚': 4, '现在': 4, '今天': 3, '昨天': 2 };
   return labelRank[session.updated] || 0;
+}
+
+function getUniqueConversationId(baseId, existingIds) {
+  if (!existingIds.has(baseId)) return baseId;
+  let suffix = 2;
+  while (existingIds.has(`${baseId}-${suffix}`)) suffix += 1;
+  return `${baseId}-${suffix}`;
+}
+
+function getConversationDragPayload(event) {
+  if (state.draggedConversation) return state.draggedConversation;
+  try {
+    const rawPayload = event.dataTransfer?.getData('application/x-snack-conversation')
+      || event.dataTransfer?.getData('text/plain');
+    const payload = JSON.parse(rawPayload || 'null');
+    return payload?.conversationId && payload?.origin ? payload : null;
+  } catch (error) {
+    return null;
+  }
+}
+
+function getLooseConversationForMove(conversationId) {
+  const looseIndex = looseSessions.findIndex((session) => session.id === conversationId);
+  if (looseIndex >= 0) return { session: looseSessions[looseIndex], looseIndex };
+  const recording = snackRecordings.find((item) => `record-summary-${item.id}` === conversationId);
+  if (!recording || state.snackRecordSummaryProjectId) return null;
+  return {
+    looseIndex: -1,
+    recording,
+    session: {
+      id: conversationId,
+      title: '会议纪要｜AI 营销增长周会',
+      updated: '刚刚',
+      updatedAt: Date.now(),
+      agent: 'Snack',
+      with: 'Snack',
+      icon: 'file-text',
+      kind: 'record-summary',
+      recordingId: recording.id,
+      messages: [],
+    },
+  };
+}
+
+function normalizeProjectConversation(session, project) {
+  const existingIds = new Set(project.sessions.map((item) => item.id));
+  return {
+    ...session,
+    id: getUniqueConversationId(session.id, existingIds),
+    with: session.with || session.agent || 'Snack',
+    updated: '刚刚',
+  };
+}
+
+function normalizeLooseConversation(session) {
+  const existingIds = new Set(looseSessions.map((item) => item.id));
+  return {
+    ...session,
+    id: getUniqueConversationId(session.id, existingIds),
+    agent: session.agent || session.with || 'Snack',
+    updated: '刚刚',
+    updatedAt: Date.now(),
+  };
+}
+
+function isDraggedConversationActive(payload) {
+  if (payload.origin === 'loose') {
+    return state.activeLooseSession === payload.conversationId
+      || (state.view === 'recordSummary' && state.snackRecordSummaryProjectId === null && `record-summary-${state.snackRecordSummaryId}` === payload.conversationId);
+  }
+  return state.activeProject === payload.projectId && state.activeSession === payload.conversationId;
+}
+
+function moveConversationToProject(payload, targetProjectId) {
+  const targetProject = getProjectById(targetProjectId);
+  if (!targetProject || (payload.origin === 'project' && payload.projectId === targetProjectId)) return;
+
+  const wasActive = isDraggedConversationActive(payload);
+  let movedSession;
+  let sourceProject = null;
+  let recording = null;
+
+  if (payload.origin === 'loose') {
+    const looseConversation = getLooseConversationForMove(payload.conversationId);
+    if (!looseConversation) return;
+    movedSession = looseConversation.session;
+    recording = looseConversation.recording
+      || snackRecordings.find((item) => item.id === movedSession.recordingId)
+      || null;
+    if (looseConversation.looseIndex >= 0) looseSessions.splice(looseConversation.looseIndex, 1);
+  } else {
+    sourceProject = getProjectById(payload.projectId);
+    const sourceIndex = sourceProject?.sessions.findIndex((session) => session.id === payload.conversationId) ?? -1;
+    if (!sourceProject || sourceIndex < 0) return;
+    [movedSession] = sourceProject.sessions.splice(sourceIndex, 1);
+    sourceProject.updated = '现在';
+    recording = snackRecordings.find((item) => item.id === movedSession.recordingId) || null;
+  }
+
+  const projectSession = normalizeProjectConversation(movedSession, targetProject);
+  targetProject.sessions.unshift(projectSession);
+  targetProject.updated = '现在';
+  state.collapsedProjects = state.collapsedProjects.filter((id) => id !== targetProjectId);
+  if (recording || projectSession.kind === 'record-summary') {
+    if (recording) recording.summaryProjectId = targetProjectId;
+    if (state.snackRecordSummaryId === projectSession.recordingId) state.snackRecordSummaryProjectId = targetProjectId;
+  }
+  if (wasActive) {
+    state.activeProject = targetProjectId;
+    state.activeSession = projectSession.id;
+    state.activeLooseSession = null;
+    state.composerProjectId = targetProjectId;
+    if (projectSession.kind !== 'record-summary') state.view = 'project';
+  }
+  render();
+  showToast(`已将「${projectSession.title}」移入「${targetProject.title}」`);
+}
+
+function moveConversationToLoose(payload) {
+  if (payload.origin !== 'project') return;
+  const sourceProject = getProjectById(payload.projectId);
+  const sourceIndex = sourceProject?.sessions.findIndex((session) => session.id === payload.conversationId) ?? -1;
+  if (!sourceProject || sourceIndex < 0) return;
+  const wasActive = isDraggedConversationActive(payload);
+  const [projectSession] = sourceProject.sessions.splice(sourceIndex, 1);
+  const looseSession = normalizeLooseConversation(projectSession);
+  looseSessions.unshift(looseSession);
+  sourceProject.updated = '现在';
+  if (looseSession.kind === 'record-summary') {
+    const recording = snackRecordings.find((item) => item.id === looseSession.recordingId);
+    if (recording) recording.summaryProjectId = null;
+    if (state.snackRecordSummaryId === looseSession.recordingId) state.snackRecordSummaryProjectId = null;
+  }
+  if (wasActive) {
+    state.view = looseSession.kind === 'record-summary' ? 'recordSummary' : 'loose';
+    state.activeLooseSession = looseSession.id;
+    state.activeProject = null;
+    state.activeSession = null;
+    state.composerProjectId = null;
+  }
+  render();
+  showToast(`已将「${looseSession.title}」移出「${sourceProject.title}」`);
+}
+
+function clearConversationDropState() {
+  document.body.classList.remove('conversation-dragging');
+  document.querySelectorAll('.conversation-drag-source, .conversation-drop-target').forEach((node) => {
+    node.classList.remove('conversation-drag-source', 'conversation-drop-target');
+  });
+}
+
+function handleConversationDragStart(event) {
+  const source = event.target.closest('[data-conversation-origin][data-conversation-id]');
+  if (!source) return;
+  const payload = {
+    origin: source.dataset.conversationOrigin,
+    conversationId: source.dataset.conversationId,
+    projectId: source.dataset.conversationProject || null,
+  };
+  state.draggedConversation = payload;
+  source.classList.add('conversation-drag-source');
+  document.body.classList.add('conversation-dragging');
+  if (event.dataTransfer) {
+    const serialized = JSON.stringify(payload);
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('application/x-snack-conversation', serialized);
+    event.dataTransfer.setData('text/plain', serialized);
+  }
+}
+
+function getConversationDropZone(target) {
+  return target.closest('[data-conversation-drop-project], [data-conversation-drop-zone="loose"]');
+}
+
+function handleConversationDragOver(event) {
+  const payload = getConversationDragPayload(event);
+  const dropZone = getConversationDropZone(event.target);
+  if (!payload || !dropZone) return;
+  const targetProjectId = dropZone.dataset.conversationDropProject;
+  const validTarget = targetProjectId
+    ? !(payload.origin === 'project' && payload.projectId === targetProjectId)
+    : payload.origin === 'project';
+  if (!validTarget) return;
+  event.preventDefault();
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+  document.querySelectorAll('.conversation-drop-target').forEach((node) => {
+    if (node !== dropZone) node.classList.remove('conversation-drop-target');
+  });
+  dropZone.classList.add('conversation-drop-target');
+}
+
+function handleConversationDrop(event) {
+  const payload = getConversationDragPayload(event);
+  const dropZone = getConversationDropZone(event.target);
+  if (!payload || !dropZone) return;
+  event.preventDefault();
+  clearConversationDropState();
+  state.draggedConversation = null;
+  const targetProjectId = dropZone.dataset.conversationDropProject;
+  if (targetProjectId) moveConversationToProject(payload, targetProjectId);
+  else moveConversationToLoose(payload);
+}
+
+function handleConversationDragEnd() {
+  state.draggedConversation = null;
+  clearConversationDropState();
+}
+
+function isValidConversationDrop(payload, dropZone) {
+  if (!payload || !dropZone) return false;
+  const targetProjectId = dropZone.dataset.conversationDropProject;
+  return targetProjectId
+    ? !(payload.origin === 'project' && payload.projectId === targetProjectId)
+    : payload.origin === 'project';
+}
+
+function setActiveConversationDropZone(dropZone) {
+  document.querySelectorAll('.conversation-drop-target').forEach((node) => {
+    node.classList.toggle('conversation-drop-target', node === dropZone);
+  });
+}
+
+function handleConversationPointerDown(event) {
+  if (event.button !== 0 || !(event.target instanceof Element)) return;
+  const source = event.target.closest('[data-conversation-origin][data-conversation-id]');
+  if (!source) return;
+  conversationPointerDrag = {
+    pointerId: event.pointerId,
+    startX: event.clientX,
+    startY: event.clientY,
+    active: false,
+    source,
+    wasDraggable: source.draggable,
+    payload: {
+      origin: source.dataset.conversationOrigin,
+      conversationId: source.dataset.conversationId,
+      projectId: source.dataset.conversationProject || null,
+    },
+  };
+  source.draggable = false;
+}
+
+function handleConversationPointerMove(event) {
+  const pointerDrag = conversationPointerDrag;
+  if (!pointerDrag || pointerDrag.pointerId !== event.pointerId) return;
+  if (!pointerDrag.active) {
+    const distance = Math.hypot(event.clientX - pointerDrag.startX, event.clientY - pointerDrag.startY);
+    if (distance < 6) return;
+    pointerDrag.active = true;
+    state.draggedConversation = pointerDrag.payload;
+    pointerDrag.source.classList.add('conversation-drag-source');
+    document.body.classList.add('conversation-dragging');
+    pointerDrag.source.setPointerCapture?.(event.pointerId);
+  }
+  event.preventDefault();
+  const hitTarget = document.elementFromPoint(event.clientX, event.clientY);
+  const dropZone = hitTarget ? getConversationDropZone(hitTarget) : null;
+  setActiveConversationDropZone(isValidConversationDrop(pointerDrag.payload, dropZone) ? dropZone : null);
+}
+
+function finishConversationPointerDrag(event) {
+  const pointerDrag = conversationPointerDrag;
+  if (!pointerDrag || pointerDrag.pointerId !== event.pointerId) return;
+  pointerDrag.source.draggable = pointerDrag.wasDraggable;
+  conversationPointerDrag = null;
+  if (!pointerDrag.active) return;
+  event.preventDefault();
+  const hitTarget = document.elementFromPoint(event.clientX, event.clientY);
+  const dropZone = hitTarget ? getConversationDropZone(hitTarget) : null;
+  const validDropZone = isValidConversationDrop(pointerDrag.payload, dropZone) ? dropZone : null;
+  clearConversationDropState();
+  state.draggedConversation = null;
+  suppressConversationClick = true;
+  window.setTimeout(() => { suppressConversationClick = false; }, 0);
+  if (!validDropZone) return;
+  const targetProjectId = validDropZone.dataset.conversationDropProject;
+  if (targetProjectId) moveConversationToProject(pointerDrag.payload, targetProjectId);
+  else moveConversationToLoose(pointerDrag.payload);
+}
+
+function cancelConversationPointerDrag(event) {
+  const pointerDrag = conversationPointerDrag;
+  if (!pointerDrag || pointerDrag.pointerId !== event.pointerId) return;
+  pointerDrag.source.draggable = pointerDrag.wasDraggable;
+  conversationPointerDrag = null;
+  state.draggedConversation = null;
+  clearConversationDropState();
 }
 
 function renderMainView() {
@@ -1390,17 +1479,19 @@ function renderProjectBoardPage(project) {
               <h2>${escapeHtml(project.title)}</h2>
             </div>
             <div class="project-entity-actions">
-              <button class="project-config-button" type="button" data-project-config="${escapeAttribute(project.id)}" aria-label="编辑项目配置" title="项目配置">
-                <i data-lucide="settings-2"></i>
-              </button>
-              ${renderGroupMembersButton(project)}
+              ${state.projectDetailOpen ? '' : `
+                <button class="project-detail-restore" type="button" data-project-detail-sidebar="open" aria-label="展开项目详情">
+                  <i data-lucide="panel-right-open"></i>
+                  <span>项目详情</span>
+                </button>
+              `}
             </div>
           </header>
         </section>
         ${renderTaskFilterBar(projectIssues, { projectFilter: project.title })}
         <section class="kanban-board project-kanban">${columns.map((column) => renderKanbanColumn(column, projectIssues)).join('')}</section>
       </section>
-      ${state.memberSidebarOpen ? renderGroupMemberDrawer(project) : ''}
+      ${state.projectDetailOpen ? renderProjectDetailPanel(project) : ''}
     </section>
   `;
   return renderBoardWorkspace({
@@ -1408,6 +1499,144 @@ function renderProjectBoardPage(project) {
     boardContent,
     project,
   });
+}
+
+function renderProjectDetailPanel(project, options = {}) {
+  const members = getProjectCollaborators(project);
+  const rules = getProjectOperatingRules(project);
+  const monitoringRules = project.monitoringRules || [];
+  const wikiTopics = project.wikiTopics || [];
+  const inRecordSummary = options.context === 'record-summary';
+  const sourceFolders = (project.sourceFolders || []).map((folder) => (
+    typeof folder === 'string' ? { name: folder, fileCount: null } : folder
+  ));
+  return `
+    <aside class="project-detail-panel ${inRecordSummary ? 'record-summary-project-detail' : ''}" id="${inRecordSummary ? 'recordSummaryProjectDetail' : 'projectBoardDetail'}" aria-label="${escapeAttribute(project.title)}项目详情">
+      <header class="project-detail-header">
+        <strong>项目详情</strong>
+        <span>
+          <button type="button" aria-label="编辑项目配置" title="编辑项目配置" data-project-config="${escapeAttribute(project.id)}">
+            <i data-lucide="pencil"></i>
+          </button>
+          <button type="button" aria-label="收起项目详情" title="收起项目详情" ${inRecordSummary ? 'data-record-action="close-summary-project-detail"' : 'data-project-detail-sidebar="close"'}>
+            <i data-lucide="panel-right-close"></i>
+          </button>
+        </span>
+      </header>
+
+      <div class="project-detail-scroll">
+        <section class="project-detail-identity">
+          <span class="project-detail-folder"><i data-lucide="folder-kanban"></i></span>
+          <div>
+            <span class="project-detail-scenario">${escapeHtml(project.scenario || '协作项目')}</span>
+            <h3>${escapeHtml(project.title)}</h3>
+            <small>所有者 · ${escapeHtml(currentUserName)}</small>
+          </div>
+        </section>
+
+        <section class="project-detail-section project-detail-objective">
+          <header><strong>项目目标</strong></header>
+          <p>${escapeHtml(project.objective || project.summary || '待补充项目目标')}</p>
+        </section>
+
+        <section class="project-detail-section project-detail-members">
+          <header>
+            <strong>成员 <em>${members.length}</em></strong>
+            <button class="project-detail-text-button" type="button" data-member-manager-toggle>
+              <i data-lucide="user-plus"></i>${state.memberManagerOpen ? '收起' : '管理'}
+            </button>
+          </header>
+          ${state.memberManagerOpen ? renderProjectDetailMemberManager(project) : ''}
+          <div class="project-detail-member-list">
+            ${members.map(renderProjectDetailMemberRow).join('')}
+          </div>
+        </section>
+
+        <section class="project-detail-section">
+          <header><strong>项目配置</strong></header>
+          <div class="project-detail-config-list">
+            <div><span><i data-lucide="shield-check"></i>执行方式</span><strong>协助执行</strong><small>关键动作需确认</small></div>
+            <div><span><i data-lucide="user-check"></i>确认人</span><strong>${escapeHtml(currentUserName)}</strong></div>
+            <div><span><i data-lucide="activity"></i>数据监控</span><strong>${monitoringRules.length ? `已启用 ${monitoringRules.length} 条` : '按需配置'}</strong></div>
+          </div>
+        </section>
+
+        <section class="project-detail-section">
+          <header><strong>关联资料</strong></header>
+          <div class="project-detail-resource-list">
+            ${wikiTopics.map((topic) => `
+              <span><i data-lucide="book-open-text"></i><strong>${escapeHtml(topic)}</strong><small>云端 Wiki</small></span>
+            `).join('')}
+            ${sourceFolders.map((folder) => {
+    const isMeeting = folder.kind === 'meeting';
+    const icon = isMeeting ? 'file-text' : 'folder';
+    const label = isMeeting ? '会议纪要' : (Number.isFinite(folder.fileCount) ? `${folder.fileCount} 个文件` : '本地文件夹');
+    return `<span><i data-lucide="${icon}"></i><strong>${escapeHtml(folder.name)}</strong><small>${label}</small></span>`;
+  }).join('')}
+            ${wikiTopics.length || sourceFolders.length ? '' : '<p class="project-detail-empty">尚未关联 Wiki 或本地文件夹</p>'}
+          </div>
+        </section>
+
+        <section class="project-detail-section project-detail-rules">
+          <header>
+            <strong>运营规则 <em>${rules.length}</em></strong>
+            <button class="project-detail-text-button" type="button" data-project-config="${escapeAttribute(project.id)}">编辑</button>
+          </header>
+          <div>
+            ${rules.map(([title, detail]) => `
+              <article>
+                <span><i data-lucide="check"></i></span>
+                <div><strong>${escapeHtml(title)}</strong><p>${escapeHtml(detail)}</p></div>
+              </article>
+            `).join('')}
+          </div>
+        </section>
+      </div>
+    </aside>
+  `;
+}
+
+function renderProjectDetailMemberManager(project) {
+  const candidates = getProjectMemberCandidates(project);
+  return `
+    <section class="project-detail-member-manager">
+      <label>
+        <i data-lucide="search"></i>
+        <input
+          type="search"
+          value="${escapeAttribute(state.memberManagerQuery)}"
+          autocomplete="off"
+          placeholder="搜索人员或 Agent"
+          aria-label="搜索可添加的项目成员"
+          data-member-manager-search
+        />
+      </label>
+      <div>
+        ${candidates.length ? candidates.map(renderProjectMemberCandidate).join('') : `
+          <p>${state.memberManagerQuery.trim() ? '没有匹配的成员' : '暂无可添加的成员'}</p>
+        `}
+      </div>
+    </section>
+  `;
+}
+
+function renderProjectDetailMemberRow(member) {
+  const canRemove = member.name !== currentUserName && member.name !== 'Snack';
+  return `
+    <article class="project-detail-member-row">
+      <span class="group-member-avatar ${member.isAgent ? 'agent' : 'human'}">${escapeHtml(member.name.slice(0, 1))}</span>
+      <div>
+        <strong>${escapeHtml(member.name)}</strong>
+        <small>${escapeHtml(member.role)}</small>
+      </div>
+      ${member.status === '工作中' ? '<em>工作中</em>' : ''}
+      ${canRemove ? `
+        <button type="button" data-member-manager-remove="${escapeAttribute(member.name)}" aria-label="移除 ${escapeAttribute(member.name)}" title="移除成员">
+          <i data-lucide="user-minus"></i>
+        </button>
+      ` : ''}
+    </article>
+  `;
 }
 
 function getProjectMeetings(projectId) {
@@ -2430,7 +2659,7 @@ function renderTaskFilterMenu() {
 }
 
 function getVisibleIssues() {
-  return issues;
+  return issues.filter((issue) => getProjectById(issue.projectId));
 }
 
 function renderKanbanColumn(column, sourceIssues = issues) {
@@ -2480,7 +2709,7 @@ function ensureCurrentUserCanReview(issue) {
 }
 
 function getPendingConfirmationIssues() {
-  return issues.filter((issue) => hasPendingConfirmation(issue) && canReviewConfirmation(issue));
+  return getVisibleIssues().filter((issue) => hasPendingConfirmation(issue) && canReviewConfirmation(issue));
 }
 
 function isMyTodoIssue(issue) {
@@ -2494,7 +2723,7 @@ function getIssueStateLabel(issue) {
 }
 
 function renderMyTodos() {
-  const myItems = issues.filter(isMyTodoIssue);
+  const myItems = getVisibleIssues().filter(isMyTodoIssue);
   const activeIssue = myItems.find((issue) => issue.code === state.activeTodoIssue) || myItems[0];
   return `
     <section class="todo-inbox-shell">
@@ -3511,9 +3740,26 @@ function renderChatView() {
           <h2>和 <button class="agent-title-button" data-agent-menu="toggle">${state.selectedAgent}<i data-lucide="chevron-down"></i></button> 一起开始工作</h2>
           ${state.agentMenuOpen ? renderProjectAgentMenu(agentProject) : ''}
         </div>
-        ${renderComposer({ project, variant: 'ask', placeholder: '描述项目目标或要跟进的事情...' })}
+        <div class="new-chat-workspace">
+          ${renderComposer({ project, variant: 'ask', placeholder: '描述项目目标或要跟进的事情...' })}
+          ${renderSnackMeetingEntryCard()}
+        </div>
       </div>
     </section>
+  `;
+}
+
+function renderSnackMeetingEntryCard() {
+  const ready = state.snackRecordConfigured;
+  const active = state.snackRecordActive;
+  const action = ready ? 'open-native' : 'start-setup';
+  const status = active ? '正在录音' : ready ? '打开录音' : '首次使用需配置';
+  return `
+    <button class="snack-meeting-entry-card ${ready ? 'configured' : ''} ${active ? 'active' : ''}" type="button" data-record-action="${action}" aria-label="${active ? '查看正在进行的 Snack 会议录音' : ready ? '打开 Snack 会议录音' : '配置 Snack 会议并下载资源包'}">
+      <span class="snack-meeting-entry-icon"><i data-lucide="mic-2"></i></span>
+      <span class="snack-meeting-entry-copy"><strong>Snack 会议</strong><small>录音、转写和会议纪要，在一个流程里完成</small></span>
+      <span class="snack-meeting-entry-status">${status}<i data-lucide="chevron-right"></i></span>
+    </button>
   `;
 }
 
@@ -3811,7 +4057,6 @@ function getResourceIcon(item) {
 
 function renderApps() {
   const recordingActionLabel = state.snackRecordActive ? '查看正在录音' : '开始录音';
-  const setupLabel = state.snackRecordInstalled ? '继续配置' : '开始使用';
   return `
     <section class="snack-apps-page" aria-label="应用">
       <header class="snack-apps-heading">
@@ -3826,10 +4071,10 @@ function renderApps() {
           <p>本地会议录音、转写与会议纪要</p>
           ${state.snackRecordConfigured ? '' : '<small class="snack-record-first-use-copy"><i data-lucide="circle-1"></i>首次使用需配置</small>'}
           <footer>
-            ${state.snackRecordConfigured ? `
-              <button class="snack-record-mic-action ${state.snackRecordActive ? 'active' : ''}" type="button" data-record-action="open-native" aria-label="${recordingActionLabel}" title="${recordingActionLabel}"><i data-lucide="mic-2"></i></button>
-              <button class="secondary-button snack-record-library-action" type="button" data-record-action="open-library">我的录音</button>
-            ` : `<button class="primary-button snack-record-setup-action" type="button" data-record-action="start-setup">${setupLabel}</button>`}
+            <button class="snack-record-mic-action ${state.snackRecordActive ? 'active' : ''}" type="button" data-record-action="${state.snackRecordConfigured ? 'open-native' : 'start-setup'}" aria-label="${state.snackRecordConfigured ? recordingActionLabel : '开始录音，首次使用需先配置'}" title="${state.snackRecordConfigured ? recordingActionLabel : '开始录音（首次使用需配置）'}"><i data-lucide="mic-2"></i></button>
+            ${state.snackRecordConfigured
+              ? '<button class="secondary-button snack-record-library-action" type="button" data-record-action="open-library">我的录音</button>'
+              : '<button class="secondary-button snack-record-setup-action" type="button" data-record-action="start-setup">配置</button>'}
           </footer>
         </article>
       </div>
@@ -3958,12 +4203,13 @@ function renderSnackRecordEmptyState() {
 function renderSnackRecordSettings() {
   const config = state.snackRecordConfigDraft;
   const resourceChecking = state.snackRecordResourceStatus === 'checking';
+  const resourceReady = state.snackRecordResourceStatus === 'complete';
   const firstTime = !state.snackRecordConfigured;
   return `
     <section class="snack-record-page snack-record-settings-page" aria-labelledby="snack-record-settings-title">
-      ${renderSnackRecordPageHeader(firstTime ? '首次配置 Snack Record' : 'Snack Record 设置', firstTime ? '只需完成一次，之后可从应用卡片右上角进入' : '录音、转写与本地文件保存方式')}
+      ${renderSnackRecordPageHeader(firstTime ? 'Snack 会议设置' : 'Snack Record 设置', firstTime ? '配置录音、转写与本地文件保存方式' : '录音、转写与本地文件保存方式', 'back-setup')}
       <div class="snack-record-page-body narrow">
-        ${firstTime ? `<section class="snack-record-first-config"><span><i data-lucide="wand-sparkles"></i></span><div><small>首次使用 · 第 2 步，共 2 步</small><h2>设置你的默认录音方式</h2><p>保存后会直接返回应用页。以后进入 Snack Record 时不会再打开本页。</p></div><em><i data-lucide="check"></i>本地资源已就绪</em></section>` : ''}
+        ${firstTime ? `<section class="snack-record-first-config"><span><i data-lucide="wand-sparkles"></i></span><div><small>首次使用</small><h2>设置你的默认录音方式</h2><p>你可以先完成设置，录音资源包正在同时下载。下载完成后保存配置即可进入录音。</p></div><em class="${resourceChecking ? 'checking' : ''}"><i data-lucide="${resourceChecking ? 'loader-circle' : 'circle-check-big'}"></i>${resourceChecking ? '正在准备' : '可开始录音'}</em></section>` : ''}
         <section class="snack-record-settings-card">
           <header><h2>录音默认配置</h2><p>以下配置将作为会议录制功能的默认设置</p></header>
           <div class="snack-record-setting-list">
@@ -3974,13 +4220,13 @@ function renderSnackRecordSettings() {
             <div class="snack-record-setting-row"><div><strong>输出位置</strong><p>转写文件和会议纪要的默认保存位置</p></div><div class="snack-record-output"><span>${escapeHtml(config.outputDirectory)}</span><button type="button" data-record-action="choose-output"><i data-lucide="folder-open"></i>选择</button></div></div>
             ${renderSnackRecordToggleSetting('按日期建立文件夹', '每天的录音结果保存到独立日期文件夹', 'organizeByDate', config.organizeByDate)}
           </div>
-          <footer><button class="secondary-button" type="button" data-record-action="restore-settings"><i data-lucide="rotate-ccw"></i>恢复默认</button><button class="primary-button" type="button" data-record-action="save-settings">${firstTime ? '完成配置并进入应用' : '保存配置'}<i data-lucide="${firstTime ? 'arrow-right' : 'check'}"></i></button></footer>
+          <footer><button class="secondary-button" type="button" data-record-action="restore-settings"><i data-lucide="rotate-ccw"></i>恢复默认</button><button class="primary-button" type="button" data-record-action="save-settings" ${firstTime && !resourceReady ? 'disabled' : ''}>${firstTime ? (resourceChecking ? '资源包下载中…' : '保存配置并去录音') : '保存配置'}<i data-lucide="${firstTime ? (resourceChecking ? 'loader-circle' : 'arrow-right') : 'check'}"></i></button></footer>
         </section>
         <section class="snack-record-resource-card">
-          <span><i data-lucide="package-check"></i></span>
-          <div><h2>本地资源包</h2><p>${resourceChecking ? '正在检查 Python、语音模型和 FFmpeg…' : '本地转写资源已经准备就绪'}</p></div>
-          <em class="${resourceChecking ? 'checking' : ''}"><i data-lucide="${resourceChecking ? 'loader-circle' : 'circle-check-big'}"></i>${resourceChecking ? '检测中' : '资源包完整'}</em>
-          <button class="secondary-button" type="button" data-record-action="check-resource" ${resourceChecking ? 'disabled' : ''}>${resourceChecking ? '检测中' : '检测完整性'}</button>
+          <span><i data-lucide="${resourceChecking ? 'package-open' : 'package-check'}"></i></span>
+          <div><h2>${resourceChecking ? '正在下载本地资源包' : '本地资源包已下载'}</h2><p>${resourceChecking ? '正在准备语音模型、FFmpeg 和本地运行环境…' : '录音与本地转写所需资源已经准备就绪'}</p>${resourceChecking ? '<div class="snack-record-resource-progress" role="progressbar" aria-label="正在下载 Snack 会议资源包" aria-busy="true"><i></i></div>' : ''}</div>
+          <em class="${resourceChecking ? 'checking' : ''}"><i data-lucide="${resourceChecking ? 'loader-circle' : 'circle-check-big'}"></i>${resourceChecking ? '下载中' : '下载完成'}</em>
+          ${firstTime ? '' : `<button class="secondary-button" type="button" data-record-action="check-resource" ${resourceChecking ? 'disabled' : ''}>${resourceChecking ? '检测中' : '检测完整性'}</button>`}
         </section>
       </div>
     </section>
@@ -4019,24 +4265,54 @@ function renderSnackRecordFollowupActions(actions) {
 
 function renderSnackRecordProjectChoiceCard() {
   return `
-    <section class="snack-record-project-choice-card" aria-label="选择是否创建项目">
+    <section class="snack-record-project-choice-card" aria-label="选择是否用项目继续跟进">
       <header>
-        <div><h3>是否创建项目继续跟进？</h3><p>会议纪要会作为项目的初始上下文。</p></div>
+        <div><h3>是否用项目继续跟进？</h3><p>Snack 已根据会议内容整理好一个项目。</p></div>
         <span>1 of 2</span>
       </header>
       <div class="snack-record-project-choice-options" role="group" aria-label="项目跟进方式">
         <button class="recommended" type="button" data-record-action="followup-track">
           <span class="snack-record-project-choice-index">1</span>
-          <span class="snack-record-project-choice-copy"><strong>创建项目继续跟进 <em>推荐</em></strong><small>先确认项目名称，再按需补充群聊、任务、指标和提醒。</small></span>
+          <span class="snack-record-project-choice-copy"><strong>用项目继续跟进 <em>推荐</em></strong><small>项目目标、相关成员和跟进规则已经从纪要中自动整理。</small></span>
           <i data-lucide="arrow-right"></i>
         </button>
         <button type="button" data-record-action="followup-save-only">
           <span class="snack-record-project-choice-index">2</span>
-          <span class="snack-record-project-choice-copy"><strong>暂不创建项目</strong><small>会议纪要保留在当前会话，之后仍可随时创建。</small></span>
+          <span class="snack-record-project-choice-copy"><strong>只保留会议纪要</strong><small>不进入持续跟进，之后仍可从纪要创建项目。</small></span>
           <i data-lucide="arrow-right"></i>
         </button>
       </div>
     </section>
+  `;
+}
+
+function renderSnackRecordPreparedProjectCard(project) {
+  const memberCount = getProjectCollaborators(project).length;
+  const monitoringCount = (project.monitoringRules || []).length;
+  return `
+    <button
+      class="snack-record-prepared-project ${state.snackRecordProjectDetailOpen ? 'active' : ''}"
+      type="button"
+      data-record-action="open-summary-project-detail"
+      aria-controls="recordSummaryProjectDetail"
+      aria-expanded="${state.snackRecordProjectDetailOpen ? 'true' : 'false'}"
+    >
+      <span class="snack-record-prepared-project-icon"><i data-lucide="folder-kanban"></i></span>
+      <span class="snack-record-prepared-project-main">
+        <small>已根据会议内容准备</small>
+        <strong>${escapeHtml(project.title)}</strong>
+        <em>${escapeHtml(project.objective || project.summary)}</em>
+        <span class="snack-record-prepared-project-meta">
+          <span><i data-lucide="users"></i>${memberCount} 位成员</span>
+          <span><i data-lucide="list-checks"></i>3 个行动项</span>
+          <span><i data-lucide="activity"></i>${monitoringCount} 个指标</span>
+        </span>
+      </span>
+      <span class="snack-record-prepared-project-action">
+        <em>查看详情</em>
+        <i data-lucide="panel-right-open"></i>
+      </span>
+    </button>
   `;
 }
 
@@ -4282,12 +4558,35 @@ function createSnackRecordFollowupProject() {
   const project = buildNewProject(projectId, serial);
   project.title = state.snackRecordFollowupProjectName.trim() || 'AI 营销增长系统';
   project.summary = 'AI 营销增长周会纪要与后续跟进';
-  project.objective = '承接会议结论，持续跟进新用户首日完成率与 onboarding 实验。';
+  project.objective = '提升新用户首日完成率，用 20% 流量验证新版 onboarding 引导，并在周五复盘转化与次日留存。';
   project.scenario = '会议跟进';
   project.health = '准备中';
-  project.operatingRules = [['会议纪要', '保留原始会议结论，后续动作由用户逐项确认。']];
-  const selectedContexts = (state.snackRecordFollowupContexts || []).map((context) => ({ ...context }));
-  const selectedMembers = (state.snackRecordFollowupMembers || []).map((member) => ({ ...member }));
+  project.operatingRules = [
+    ['会议结论', '会议纪要和原始转写作为项目初始依据，关键结论可回溯。'],
+    ['行动项', '负责人和截止时间由 Snack 从会议内容中整理，写入 Task Hub 前仍需确认。'],
+    ['实验复盘', '周五汇总 onboarding 转化与次日留存，形成下一次会议的会前简报。'],
+  ];
+  project.monitoringRules = [
+    { metric: 'onboarding 完成率', operator: '≥', value: '55', unit: '%', type: 'meeting', source: '会议目标：onboarding 完成率达到 55%' },
+    { metric: '新用户次日留存', operator: '≥', value: '38', unit: '%', type: 'meeting', source: '会议目标：新用户次日留存达到 38%' },
+  ];
+  project.pushRule = '周五复盘实验转化与次日留存；涉及任务创建和执行的动作仍由田晓柔确认。';
+  const selectedContexts = (state.snackRecordFollowupContexts || []).length
+    ? state.snackRecordFollowupContexts.map((context) => ({ ...context }))
+    : [{
+      id: `meeting:${recording.id}`,
+      name: '会议纪要｜AI 营销增长周会',
+      path: '本次会议 / 纪要与原始转写',
+      kind: 'meeting',
+      fileCount: 2,
+    }];
+  const selectedMembers = (state.snackRecordFollowupMembers || []).length
+    ? state.snackRecordFollowupMembers.map((member) => ({ ...member }))
+    : [
+      { name: currentUserName, isAgent: false, role: '项目发起人' },
+      { name: '陆铭', isAgent: false, role: '内容负责人' },
+      { name: '林可', isAgent: false, role: '数据负责人' },
+    ];
   const selectedPeople = selectedMembers.filter((member) => !member.isAgent);
   const selectedAgents = selectedMembers.filter((member) => member.isAgent);
   project.wikiTopics = selectedContexts.filter((context) => context.kind === 'cloud').map((context) => context.name);
@@ -4300,7 +4599,12 @@ function createSnackRecordFollowupProject() {
   project.members = selectedPeople.map((member) => member.name);
   project.agents = ['Snack', ...selectedAgents.map((member) => member.name)];
   project.rememberedPeople = [
-    ...selectedPeople.map((member) => [member.name, member.name === currentUserName ? '项目发起人，负责目标确认和执行授权' : '受邀项目成员，参与项目协作和任务确认']),
+    ...selectedPeople.map((member) => {
+      if (member.name === currentUserName) return [member.name, '项目发起人，负责目标确认和执行授权'];
+      if (member.name === '陆铭') return [member.name, '负责 onboarding 引导稿，计划周三前完成'];
+      if (member.name === '林可') return [member.name, '负责激活率数据口径与历史基线'];
+      return [member.name, '受邀项目成员，参与项目协作和任务确认'];
+    }),
     ...selectedAgents.map((member) => [member.name, `受邀 ${member.role}，按项目任务节点处理对应工作`]),
   ];
   project.sessions = [{
@@ -4408,8 +4712,9 @@ function renderSnackRecordSummary() {
   const complete = state.snackRecordSummaryStatus === 'complete';
   const answers = state.snackRecordFollowupAnswers;
   const step = state.snackRecordFollowupStep;
-  const tracking = answers.tracking === '创建项目继续跟踪';
+  const tracking = answers.tracking === '用项目继续跟进';
   const projectName = state.snackRecordFollowupProjectName.trim() || 'AI 营销增长系统';
+  const preparedProject = getProjectById(state.snackRecordSummaryProjectId);
   const progress = complete ? 100 : Math.max(12, Math.round(recording.progress || 12));
   const messages = [];
 
@@ -4421,9 +4726,16 @@ function renderSnackRecordSummary() {
   }
 
   if (complete) {
+    const transcriptFileName = recording.transcriptFileName || recording.fileName.replace(/\.[^.]+$/, '.txt');
     messages.push(renderSnackRecordAssistantMessage(`
       <div class="snack-record-analysis-status"><span><i></i>分析完成</span><i data-lucide="chevron-right"></i></div>
-      <p class="snack-record-analysis-copy">会议纪要已生成。</p>
+      <p class="snack-record-analysis-copy">会议纪要已生成，录音转写原文 TXT 已发送给你。</p>
+      <button class="snack-record-transcript-delivery" type="button" data-record-action="download-transcript" data-record-id="${escapeAttribute(recording.id)}" aria-label="下载录音转写原文 ${escapeAttribute(transcriptFileName)}">
+        <span><i data-lucide="file-text"></i></span>
+        <span><strong>${escapeHtml(transcriptFileName)}</strong><small>TXT · 完整录音转写原文</small></span>
+        <em>下载</em>
+        <i data-lucide="download"></i>
+      </button>
       <article class="snack-record-minutes-document">
         <h2>会议纪要｜AI 营销增长周会</h2>
         <p class="snack-record-minutes-meta">时间：2026-08-02 23:10<br />时长：${formatSnackRecordDuration(recording.durationSeconds)}</p>
@@ -4436,75 +4748,28 @@ function renderSnackRecordSummary() {
 
   if (answers.tracking) messages.push(renderSnackRecordUserMessage(answers.tracking));
 
-  if (tracking && step >= 2) {
+  if (tracking && step >= 2 && preparedProject) {
     messages.push(renderSnackRecordAssistantMessage(`
-      <p>好的。我先根据会议内容准备了一个项目草稿，你可以修改名称再确认。</p>
-      <section class="snack-record-project-draft">
-        <label><small>项目名称</small><input value="${escapeAttribute(state.snackRecordFollowupProjectName)}" data-record-project-name aria-label="项目名称" ${answers.project ? 'disabled' : ''} /></label>
-        ${renderSnackRecordContextPicker(Boolean(answers.project))}
-        ${renderSnackRecordMemberPicker(Boolean(answers.project))}
-      </section>
-      ${step === 2 ? renderSnackRecordFollowupActions([{ action: 'followup-project', label: '确认创建项目', icon: 'check', primary: true }, { action: 'followup-project-skip', label: '取消跟踪', icon: 'x' }]) : ''}
-    `, step === 2 ? 'is-current-step' : ''));
+      <p>我已经根据会议内容准备好了项目“${escapeHtml(projectName)}”。项目目标、相关成员、会议资料和跟进规则都已整理完成；点击项目卡，可以直接在当前会话右侧查看和调整。</p>
+      ${renderSnackRecordPreparedProjectCard(preparedProject)}
+    `, 'is-current-step'));
   }
-
-  if (answers.project) messages.push(renderSnackRecordUserMessage(answers.project));
-
-  if (tracking && step >= 3) {
-    messages.push(renderSnackRecordAssistantMessage(`
-      <p>项目“${escapeHtml(projectName)}”已创建，并已带入会议纪要和成员。要同时创建对应的项目群聊吗？</p>
-      <div class="snack-record-inline-result"><span><i data-lucide="folder-check"></i></span><div><strong>${escapeHtml(projectName)}</strong><small>会议纪要已写入项目上下文</small></div><em>已创建</em></div>
-      ${step === 3 ? renderSnackRecordFollowupActions([{ action: 'followup-group', label: '创建项目群聊', icon: 'messages-square', primary: true }, { action: 'followup-group-skip', label: '暂不创建群聊' }]) : ''}
-    `, step === 3 ? 'is-current-step' : ''));
-  }
-
-  if (answers.group) messages.push(renderSnackRecordUserMessage(answers.group));
-
-  if (tracking && step >= 4) {
-    messages.push(renderSnackRecordAssistantMessage(`
-      <p>${answers.group === '创建项目群聊' ? '项目群聊已经建立，成员已加入。' : '这次暂不创建群聊。'} 我还识别到 3 个行动项，需要写入 Task Hub 吗？</p>
-      <div class="snack-record-task-preview"><div><span>1</span><strong>完成 onboarding 引导稿</strong><em>陆铭 · 周三</em></div><div><span>2</span><strong>补齐激活率数据口径</strong><em>林可 · 周四</em></div><div><span>3</span><strong>复盘转化与次日留存</strong><em>田晓柔 · 周五</em></div></div>
-      ${step === 4 ? renderSnackRecordFollowupActions([{ action: 'followup-tasks', label: '将 3 个任务写入 Task Hub', icon: 'list-checks', primary: true }, { action: 'followup-tasks-skip', label: '只保留在纪要中' }]) : ''}
-    `, step === 4 ? 'is-current-step' : ''));
-  }
-
-  if (answers.tasks) messages.push(renderSnackRecordUserMessage(answers.tasks));
-
-  if (tracking && step >= 5) {
-    messages.push(renderSnackRecordAssistantMessage(`
-      <p>${answers.tasks === '将 3 个任务写入 Task Hub' ? '3 个任务已创建并分配负责人。' : '行动项只保留在会议纪要中。'} 这次会议还明确了核心目标和两个指标，要持续跟踪吗？</p>
-      <section class="snack-record-metrics-card"><header><span><i data-lucide="target"></i></span><div><small>核心目标</small><strong>提升新用户首日完成率</strong></div></header><div><span><small>onboarding 完成率</small><strong>42% <em>目标 55%</em></strong></span><span><small>新用户次日留存</small><strong>31% <em>目标 38%</em></strong></span></div></section>
-      ${step === 5 ? renderSnackRecordFollowupActions([{ action: 'followup-metrics', label: '持续跟踪目标与指标', icon: 'chart-no-axes-combined', primary: true }, { action: 'followup-metrics-skip', label: '暂不跟踪指标' }]) : ''}
-    `, step === 5 ? 'is-current-step' : ''));
-  }
-
-  if (answers.metrics) messages.push(renderSnackRecordUserMessage(answers.metrics));
-
-  if (tracking && step >= 6) {
-    messages.push(renderSnackRecordAssistantMessage(`
-      <p>${answers.metrics === '持续跟踪目标与指标' ? '核心目标和指标已加入项目首页。' : '这次不持续跟踪指标。'} 最后，要在下次会前提醒成员，并把项目进展整理成一份会前简报吗？</p>
-      <div class="snack-record-reminder-card"><span><i data-lucide="calendar-clock"></i></span><div><strong>下次增长周会 · 8 月 9 日 10:00</strong><small>会前 30 分钟提醒 · 自动汇总任务与指标变化</small></div></div>
-      ${step === 6 ? renderSnackRecordFollowupActions([{ action: 'followup-reminder', label: '开启提醒并发送会前简报', icon: 'bell-ring', primary: true }, { action: 'followup-reminder-skip', label: '暂不开启提醒' }]) : ''}
-    `, step === 6 ? 'is-current-step' : ''));
-  }
-
-  if (answers.reminder) messages.push(renderSnackRecordUserMessage(answers.reminder));
 
   if (step >= 7) {
-    const savedOnly = !tracking;
     messages.push(renderSnackRecordAssistantMessage(`
-      <div class="snack-record-followup-finished"><span><i data-lucide="circle-check-big"></i></span><div><strong>${savedOnly ? '会议纪要已保留在当前会话' : '这次会议的跟进配置已完成'}</strong><p>${savedOnly ? '你可以继续询问纪要内容，也可以之后再创建项目。' : `项目“${escapeHtml(projectName)}”已经带着你确认的配置开始运行；未开启的配置仍可之后添加。`}</p></div></div>
-      ${renderSnackRecordFollowupActions(savedOnly ? [{ action: 'back-library', label: '返回我的录音', icon: 'folder-clock', primary: true }] : [{ action: 'summary-to-project', label: '打开项目查看', icon: 'arrow-right', primary: true }, { action: 'back-library', label: '返回我的录音' }])}
+      <div class="snack-record-followup-finished"><span><i data-lucide="circle-check-big"></i></span><div><strong>会议纪要已保留在当前会话</strong><p>你可以继续询问纪要内容，也可以之后再从这份纪要创建项目。</p></div></div>
+      ${renderSnackRecordFollowupActions([{ action: 'back-library', label: '返回我的录音', icon: 'folder-clock', primary: true }])}
     `, step === 7 ? 'is-current-step' : ''));
   }
 
   return `
-    <section class="project-chat-shell standalone-chat-shell snack-record-summary-page" aria-label="独立会议纪要会话" data-conversation-scope="standalone">
+    <section class="project-chat-shell standalone-chat-shell snack-record-summary-page ${state.snackRecordProjectDetailOpen && preparedProject ? 'project-detail-open' : ''}" aria-label="独立会议纪要会话" data-conversation-scope="standalone">
       <section class="project-chat-main snack-record-conversation-main">
         <header class="project-chat-header snack-record-conversation-header"><div class="project-chat-title"><span><h2>会议纪要：AI 营销增长周会</h2></span></div></header>
         <div class="snack-record-followup-thread" data-record-followup-thread><div class="snack-record-conversation-inner">${messages.join('')}</div></div>
         <div class="snack-record-conversation-dock"><div class="snack-record-conversation-dock-inner">${complete && step === 1 ? renderSnackRecordProjectChoiceCard() : ''}${renderSnackRecordConversationComposer()}</div></div>
       </section>
+      ${state.snackRecordProjectDetailOpen && preparedProject ? renderProjectDetailPanel(preparedProject, { context: 'record-summary' }) : ''}
     </section>
   `;
 }
@@ -4632,30 +4897,27 @@ function renderSnackRecordTranscriptPreview() {
 }
 
 function startSnackRecordSetup() {
+  state.snackRecordSetupReturnView = state.view === 'chat' ? 'chat' : 'apps';
+  state.snackRecordNativeOpen = false;
+  state.snackRecordSetupOpen = false;
+  state.snackRecordSetupPhase = 'idle';
+  state.snackRecordConfigDraft = { ...state.snackRecordConfig };
+  state.view = 'recordSettings';
   if (state.snackRecordInstalled) {
-    state.snackRecordConfigDraft = { ...state.snackRecordConfig };
-    state.view = 'recordSettings';
+    state.snackRecordResourceStatus = 'complete';
     render();
     return;
   }
   if (snackRecordSetupTimerId !== null) window.clearTimeout(snackRecordSetupTimerId);
-  state.snackRecordSetupOpen = true;
-  state.snackRecordSetupPhase = 'checking';
+  state.snackRecordResourceStatus = 'checking';
   render();
   snackRecordSetupTimerId = window.setTimeout(() => {
+    snackRecordSetupTimerId = null;
     state.snackRecordInstalled = true;
     state.snackRecordResourceStatus = 'complete';
-    state.snackRecordSetupPhase = 'success';
     render();
-    snackRecordSetupTimerId = window.setTimeout(() => {
-      snackRecordSetupTimerId = null;
-      state.snackRecordSetupOpen = false;
-      state.snackRecordConfigDraft = { ...state.snackRecordConfig };
-      state.view = 'recordSettings';
-      render();
-      showToast('已检测到 Snack Record 本地资源，请完成默认配置');
-    }, 650);
-  }, 1300);
+    showToast('资源包下载完成，保存配置后即可开始录音');
+  }, 2200);
 }
 
 function startSnackRecordMock() {
@@ -4744,11 +5006,11 @@ function openSnackRecordSummary(recordingId) {
   state.snackRecordSummaryId = recordingId;
   state.snackRecordSummaryProjectId = recording.summaryProjectId || null;
   state.snackRecordSummaryStatus = 'generating';
-  state.snackRecordFollowupStep = existingSummaryProject ? 3 : 0;
+  state.snackRecordFollowupStep = existingSummaryProject ? 2 : 0;
   state.snackRecordFollowupAnswers = existingSummaryProject ? {
-    tracking: '创建项目继续跟踪',
-    project: `确认创建项目：${existingSummaryProject.title}`,
+    tracking: '用项目继续跟进',
   } : {};
+  state.snackRecordProjectDetailOpen = false;
   state.snackRecordFollowupProjectName = existingSummaryProject?.title || 'AI 营销增长系统';
   if (openingDifferentSummary) {
     state.snackRecordFollowupContexts = [];
@@ -4799,7 +5061,7 @@ function openSnackRecordSummary(recordingId) {
       current.transcript = '田晓柔：本周以新用户首日完成率作为核心目标，先用 20% 流量验证新版 onboarding。\n陆铭：我会在周三前完成 onboarding 引导稿。\n林可：我来补齐激活率数据口径与历史基线。\n田晓柔：周五一起复盘实验转化和次日留存。';
     }
     state.snackRecordSummaryStatus = 'complete';
-    state.snackRecordFollowupStep = state.snackRecordSummaryProjectId ? Math.max(state.snackRecordFollowupStep, 3) : 1;
+    state.snackRecordFollowupStep = state.snackRecordSummaryProjectId ? Math.max(state.snackRecordFollowupStep, 2) : 1;
     render();
     scrollSnackRecordFollowup();
   }, recording.state === 'completed' ? 1200 : 3200);
@@ -4873,6 +5135,22 @@ function confirmSnackRecordDeletion() {
   showToast(`已删除 ${deleteIds.size} 条 mock 录音`);
 }
 
+function downloadSnackRecordTranscript(recordingId) {
+  const recording = snackRecordings.find((item) => item.id === recordingId);
+  if (!recording || !recording.transcript) return;
+  const fileName = recording.transcriptFileName || recording.fileName.replace(/\.[^.]+$/, '.txt');
+  const file = new Blob([recording.transcript], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(file);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  showToast(`已下载 ${fileName}`);
+}
+
 function handleSnackRecordAction(target) {
   const action = target.dataset.recordAction;
   const recordingId = target.dataset.recordId;
@@ -4908,8 +5186,14 @@ function handleSnackRecordAction(target) {
   }
   if (action === 'open-settings') {
     state.snackRecordNativeOpen = false;
+    state.snackRecordSetupReturnView = 'apps';
     state.snackRecordConfigDraft = { ...state.snackRecordConfig };
     state.view = 'recordSettings';
+    render();
+    return;
+  }
+  if (action === 'back-setup') {
+    state.view = state.snackRecordSetupReturnView || 'apps';
     render();
     return;
   }
@@ -4919,6 +5203,7 @@ function handleSnackRecordAction(target) {
     return;
   }
   if (action === 'back-library') {
+    state.snackRecordProjectDetailOpen = false;
     state.view = 'recordLibrary';
     render();
     return;
@@ -4939,6 +5224,7 @@ function handleSnackRecordAction(target) {
     render();
     return;
   }
+  if (action === 'download-transcript') return downloadSnackRecordTranscript(recordingId);
   if (action === 'close-transcript') {
     state.snackRecordTranscriptId = null;
     render();
@@ -4965,14 +5251,17 @@ function handleSnackRecordAction(target) {
     return;
   }
   if (action === 'save-settings') {
+    if (!state.snackRecordConfigured && state.snackRecordResourceStatus !== 'complete') return;
+    const firstTime = !state.snackRecordConfigured;
     state.snackRecordConfig = { ...state.snackRecordConfigDraft };
     state.snackRecordInstalled = true;
     state.snackRecordConfigured = true;
     state.snackRecordResourceStatus = 'complete';
     saveSnackRecordConfig();
     state.view = 'apps';
+    state.snackRecordNativeOpen = firstTime;
     render();
-    showToast('Snack Record 配置已保存，以后可从卡片右上角修改');
+    showToast(firstTime ? '配置完成，点击麦克风开始录音' : 'Snack Record 配置已保存');
     return;
   }
   if (action === 'check-resource') {
@@ -5015,6 +5304,23 @@ function handleSnackRecordAction(target) {
     showToast('已打开更多操作（mock）');
     return;
   }
+  if (action === 'open-summary-project-detail') {
+    const project = createSnackRecordFollowupProject();
+    if (!project) return;
+    state.activeProject = project.id;
+    state.snackRecordProjectDetailOpen = true;
+    state.memberManagerOpen = false;
+    state.memberManagerQuery = '';
+    renderSnackRecordFollowupUpdate();
+    return;
+  }
+  if (action === 'close-summary-project-detail') {
+    state.snackRecordProjectDetailOpen = false;
+    state.memberManagerOpen = false;
+    state.memberManagerQuery = '';
+    renderSnackRecordFollowupUpdate();
+    return;
+  }
   if (action === 'toggle-record-context-picker') {
     state.snackRecordContextPickerOpen = !state.snackRecordContextPickerOpen;
     state.snackRecordMemberPickerOpen = false;
@@ -5043,32 +5349,14 @@ function handleSnackRecordAction(target) {
   }
   if (action === 'select-record-member') return selectSnackRecordMember(target.dataset.recordMember);
   if (action === 'remove-record-member') return removeSnackRecordMember(target.dataset.recordMember);
-  if (action === 'followup-track') return setSnackRecordFollowupAnswer('tracking', '创建项目继续跟踪', 2);
-  if (action === 'followup-save-only') return setSnackRecordFollowupAnswer('tracking', '只保存纪要', 7);
-  if (action === 'followup-project') {
+  if (action === 'followup-track') {
     const project = createSnackRecordFollowupProject();
     if (!project) return;
-    setSnackRecordFollowupAnswer('project', `确认创建项目：${project.title}`, 3);
-    showToast(`项目“${project.title}”已创建，会议纪要会话已移入项目`);
+    setSnackRecordFollowupAnswer('tracking', '用项目继续跟进', 2);
+    showToast(`项目“${project.title}”已根据会议内容准备好`);
     return;
   }
-  if (action === 'followup-project-skip') {
-    state.snackRecordFollowupAnswers.tracking = '只保存纪要';
-    return setSnackRecordFollowupAnswer('project', '取消创建项目', 7);
-  }
-  if (action === 'followup-group') return setSnackRecordFollowupAnswer('group', '创建项目群聊', 4);
-  if (action === 'followup-group-skip') return setSnackRecordFollowupAnswer('group', '暂不创建群聊', 4);
-  if (action === 'followup-tasks') {
-    const createdIssues = writeSnackRecordTasksToTaskHub();
-    setSnackRecordFollowupAnswer('tasks', '将 3 个任务写入 Task Hub', 5);
-    showToast(`已将 ${createdIssues.length} 个会议行动项写入 Task Hub`);
-    return;
-  }
-  if (action === 'followup-tasks-skip') return setSnackRecordFollowupAnswer('tasks', '只保留在纪要中', 5);
-  if (action === 'followup-metrics') return setSnackRecordFollowupAnswer('metrics', '持续跟踪目标与指标', 6);
-  if (action === 'followup-metrics-skip') return setSnackRecordFollowupAnswer('metrics', '暂不跟踪指标', 6);
-  if (action === 'followup-reminder') return setSnackRecordFollowupAnswer('reminder', '开启会前提醒与简报', 7);
-  if (action === 'followup-reminder-skip') return setSnackRecordFollowupAnswer('reminder', '暂不开启提醒', 7);
+  if (action === 'followup-save-only') return setSnackRecordFollowupAnswer('tracking', '只保存纪要', 7);
 }
 
 function getActiveProject() {
@@ -6085,6 +6373,7 @@ function createNewProject(form) {
   state.agentMenuOpen = false;
   state.logDocIssue = null;
   state.boardSidebarOpen = false;
+  state.projectDetailOpen = true;
   state.memberSidebarOpen = false;
   state.taskFilterOpen = false;
   state.agentStatusOpen = false;
@@ -6590,6 +6879,7 @@ function openProject(projectId) {
   state.agentMenuOpen = false;
   state.logDocIssue = null;
   state.boardSidebarOpen = false;
+  state.projectDetailOpen = true;
   state.memberSidebarOpen = false;
   state.taskFilterOpen = false;
   state.agentStatusOpen = false;
@@ -6872,7 +7162,7 @@ function openLooseSession(sessionId) {
   const session = getSortedLooseSessions().find((item) => item.id === sessionId);
   state.openProjectMenuId = null;
   state.openProjectCreateMenuId = null;
-  if (session?.kind === 'recordSummary') {
+  if (session && ['recordSummary', 'record-summary'].includes(session.kind)) {
     state.view = 'recordSummary';
     state.snackRecordSummaryId = session.recordingId;
     state.snackRecordSummaryProjectId = null;
@@ -6927,6 +7217,17 @@ function setBoardSidebar(mode) {
     state.memberSidebarOpen = false;
     state.agentStatusOpen = false;
   }
+  render();
+}
+
+function setProjectDetailSidebar(mode) {
+  const nextOpen = mode === 'open' ? true : mode === 'close' ? false : !state.projectDetailOpen;
+  state.projectDetailOpen = nextOpen;
+  if (!nextOpen) {
+    state.memberManagerOpen = false;
+    state.memberManagerQuery = '';
+  }
+  state.memberSidebarOpen = false;
   render();
 }
 
@@ -7784,6 +8085,12 @@ function renderIcons() {
 
 function handleBodyClick(event) {
   if (!(event.target instanceof Element)) return;
+  if (suppressConversationClick) {
+    event.preventDefault();
+    event.stopPropagation();
+    suppressConversationClick = false;
+    return;
+  }
   const clickedInsideSnackRecordPicker = event.target.closest('[data-record-context-picker], [data-record-member-picker]');
   const shouldCloseSnackRecordPicker = (state.snackRecordContextPickerOpen || state.snackRecordMemberPickerOpen)
     && !clickedInsideSnackRecordPicker;
@@ -7813,7 +8120,7 @@ function handleBodyClick(event) {
   if (state.projectMemberPickerOpen && !clickedInsideMemberPicker) closeProjectMemberPicker();
   const clickedInsideWikiTopicPicker = event.target.closest('[data-project-wiki-topic-picker]');
   if (state.projectWikiTopicPickerOpen && !clickedInsideWikiTopicPicker) closeProjectWikiTopicPicker();
-  const target = event.target.closest('[data-view], [data-create-project], [data-project-config], [data-project-modal-close], [data-project-modal-backdrop], [data-create-issue], [data-issue-modal-close], [data-issue-modal-backdrop], [data-project-folder-remove], [data-project-wiki-topic-toggle], [data-project-wiki-topic-option], [data-project-member-picker], [data-project-member-search], [data-project-member-option], [data-project-member-remove], [data-monitoring-rule-recognize], [data-monitoring-rule-edit], [data-monitoring-rule-remove], [data-project-intake-submit], [data-meeting-intake-submit], [data-mock-action], [data-confirmation-action], [data-confirmation-cancel], [data-model-menu], [data-model-select], [data-project-picker], [data-project-context], [data-project-context-empty], [data-project-picker-search], [data-agent-status-toggle], [data-task-tab], [data-task-filter], [data-issue-tab], [data-close-issue-tab], [data-todo-inbox-issue], [data-issue-id], [data-log-doc], [data-close-log-doc], [data-project-open], [data-project-toggle], [data-project-sessions], [data-project-session], [data-project-menu], [data-project-action], [data-project-create-menu], [data-project-create-action], [data-loose-session], [data-board-sidebar], [data-member-sidebar], [data-member-tab], [data-member-manager-toggle], [data-member-manager-add], [data-member-manager-remove], [data-agent-tab], [data-agent-chat], [data-agent-menu], [data-agent-select], [data-resource-tab], [data-toast]');
+  const target = event.target.closest('[data-view], [data-create-project], [data-project-config], [data-project-detail-sidebar], [data-project-modal-close], [data-project-modal-backdrop], [data-create-issue], [data-issue-modal-close], [data-issue-modal-backdrop], [data-project-folder-remove], [data-project-wiki-topic-toggle], [data-project-wiki-topic-option], [data-project-member-picker], [data-project-member-search], [data-project-member-option], [data-project-member-remove], [data-monitoring-rule-recognize], [data-monitoring-rule-edit], [data-monitoring-rule-remove], [data-project-intake-submit], [data-meeting-intake-submit], [data-mock-action], [data-confirmation-action], [data-confirmation-cancel], [data-model-menu], [data-model-select], [data-project-picker], [data-project-context], [data-project-context-empty], [data-project-picker-search], [data-agent-status-toggle], [data-task-tab], [data-task-filter], [data-issue-tab], [data-close-issue-tab], [data-todo-inbox-issue], [data-issue-id], [data-log-doc], [data-close-log-doc], [data-project-open], [data-project-toggle], [data-project-sessions], [data-project-session], [data-project-menu], [data-project-action], [data-project-create-menu], [data-project-create-action], [data-loose-session], [data-board-sidebar], [data-member-sidebar], [data-member-tab], [data-member-manager-toggle], [data-member-manager-add], [data-member-manager-remove], [data-agent-tab], [data-agent-chat], [data-agent-menu], [data-agent-select], [data-resource-tab], [data-toast]');
   if (!target) {
     if (state.openProjectMenuId || state.openProjectCreateMenuId || state.modelPickerOpen || state.projectPickerOpen) {
       state.openProjectMenuId = null;
@@ -7854,6 +8161,7 @@ function handleBodyClick(event) {
     if (event.target === target) closeIssueCreationModal();
     return;
   }
+  if (target.dataset.projectDetailSidebar) return setProjectDetailSidebar(target.dataset.projectDetailSidebar);
   if (target.dataset.createIssue !== undefined) return openIssueCreationModal();
   if (target.dataset.projectConfig) return openProjectCreationModal(target.dataset.projectConfig);
   if (target.dataset.projectFolderRemove) return removeProjectFolder(target.dataset.projectFolderRemove);
@@ -7919,6 +8227,14 @@ function handleBodyClick(event) {
   }
 }
 
+document.body.addEventListener('dragstart', handleConversationDragStart);
+document.body.addEventListener('dragover', handleConversationDragOver);
+document.body.addEventListener('drop', handleConversationDrop);
+document.body.addEventListener('dragend', handleConversationDragEnd);
+document.body.addEventListener('pointerdown', handleConversationPointerDown);
+document.body.addEventListener('pointermove', handleConversationPointerMove);
+document.body.addEventListener('pointerup', finishConversationPointerDrag);
+document.body.addEventListener('pointercancel', cancelConversationPointerDrag);
 document.body.addEventListener('click', handleBodyClick);
 document.body.addEventListener('submit', (event) => {
   const form = event.target;
