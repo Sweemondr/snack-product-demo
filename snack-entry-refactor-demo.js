@@ -104,9 +104,19 @@ const state = {
   projectCreationFolders: [],
   projectCreationWikiTopics: [],
   projectWikiTopicPickerOpen: false,
+  projectKnowledgeEditorOpen: false,
   projectMemberQuery: '',
   projectMemberPickerOpen: false,
+  projectMemberPickerType: 'human',
+  projectMemberEditorOpen: false,
   projectEditingId: null,
+  projectBoardTab: 'tasks',
+  projectDetailTab: 'collaborators',
+  projectGroupChatOpen: false,
+  projectGroupChatProjectId: null,
+  projectGroupChatQuery: '',
+  projectGroupChatFilter: 'all',
+  projectGroupChatSelection: [],
   issueCreationOpen: false,
   issueCreationProjectId: null,
   issueSerial: 1,
@@ -165,12 +175,28 @@ const currentUserName = '田晓柔';
 
 const projectWikiTopicOptions = [
   {
-    name: '即服务',
-    description: '服务方案、客户交付与支持资料',
+    name: 'Snack 产品空间',
+    description: '语雀中的产品规划、需求与设计文档',
+    source: '语雀空间',
+    type: 'yuque',
   },
   {
-    name: '平台业务',
-    description: '平台规划、运营规则与业务资料',
+    name: '市场运营空间',
+    description: '语雀中的市场活动与运营协作资料',
+    source: '语雀空间',
+    type: 'yuque',
+  },
+  {
+    name: '即服务知识库',
+    description: '已构建完成的服务方案与客户交付知识',
+    source: 'LLM Wiki',
+    type: 'llm-wiki',
+  },
+  {
+    name: '平台业务知识库',
+    description: '已构建完成的平台规划与业务知识',
+    source: 'LLM Wiki',
+    type: 'llm-wiki',
   },
 ];
 
@@ -836,7 +862,7 @@ function render() {
   renderProjectHistory();
   renderMeetingDemoControls();
   mainSurface.classList.toggle('edge-to-edge', ['project', 'projectBoard', 'projectSchedule', 'issue', 'recordLibrary', 'recordSettings', 'recordSummary'].includes(state.view));
-  mainSurface.innerHTML = `${renderMainView()}${state.projectCreationOpen ? renderProjectCreationModal() : ''}${state.issueCreationOpen ? renderIssueCreationModal() : ''}${renderMeetingOverlays()}${renderSnackRecordOverlays()}`;
+  mainSurface.innerHTML = `${renderMainView()}${state.projectCreationOpen ? renderProjectCreationModal() : ''}${state.issueCreationOpen ? renderIssueCreationModal() : ''}${state.projectGroupChatOpen ? renderProjectGroupChatModal() : ''}${renderMeetingOverlays()}${renderSnackRecordOverlays()}`;
   renderIcons();
   syncProjectRenameFocus();
   syncProjectCreationFocus();
@@ -891,7 +917,7 @@ function syncEntryNav() {
 }
 
 function getSecondaryTabs() {
-  if (['tasks', 'issue', 'projectBoard', 'projectSchedule'].includes(state.view)) {
+  if (['tasks', 'issue', 'projectSchedule'].includes(state.view)) {
     return [
       { value: 'projects', label: '状态看板', active: state.view !== 'projectSchedule' && state.taskTab === 'projects', attr: 'data-task-tab' },
       {
@@ -926,11 +952,11 @@ function renderSecondaryTabs() {
 }
 
 function syncTopbarVisibility() {
-  topbar.hidden = ['project', 'recordSummary'].includes(state.view);
+  topbar.hidden = ['project', 'projectBoard', 'recordSummary'].includes(state.view);
 }
 
 function renderTopbarActions() {
-  const canCreateIssue = ['tasks', 'projectBoard', 'issue'].includes(state.view);
+  const canCreateIssue = ['tasks', 'issue'].includes(state.view);
   topbarActions.innerHTML = canCreateIssue ? `
     <button class="primary-button task-create-entry" type="button" data-create-issue>
       <i data-lucide="plus"></i>
@@ -1466,106 +1492,267 @@ function renderTaskWorkbench() {
 function renderProjectBoardPage(project) {
   if (!project) return renderTaskWorkbench();
   const projectIssues = getProjectIssues(project);
+  const projectTodos = projectIssues.filter(isMyTodoIssue);
+  const projectCollaborators = getProjectCollaborators(project);
+  const collaboratorCount = projectCollaborators.filter((member) => member.name !== 'Snack').length;
+  const knowledgeCount = (project.wikiTopics || []).length + (project.sourceFolders || []).length;
+  const projectTaskBoard = `
+    <section class="project-task-workbench" aria-label="${escapeAttribute(project.title)}任务看板">
+      <header class="project-task-toolbar">
+        ${renderTaskFilterBar(projectIssues)}
+        <button type="button" data-create-issue><i data-lucide="plus"></i><span>创建任务</span></button>
+      </header>
+      <section class="kanban-board project-kanban">
+        ${columns.map((column) => renderKanbanColumn(column, projectIssues)).join('')}
+      </section>
+    </section>
+  `;
+  const projectTabContent = state.projectBoardTab === 'todos'
+    ? renderProjectWorkList(projectTodos, 'todos')
+    : state.projectBoardTab === 'collaborators'
+      ? renderProjectCollaboratorsPage(project)
+      : state.projectBoardTab === 'knowledge'
+        ? renderProjectKnowledgePage(project)
+        : projectTaskBoard;
   const boardContent = `
     <section class="project-board-shell">
-      <section class="project-board-page">
-        <section class="project-entity-header">
-          <header class="project-entity-primary">
-            <div class="project-board-title">
-              <span class="project-entity-kicker">
-                <em>${escapeHtml(project.scenario)}</em>
-                <span>项目 ID · ${escapeHtml(project.id)}</span>
-              </span>
-              <h2>${escapeHtml(project.title)}</h2>
-            </div>
-            <div class="project-entity-actions">
-              ${state.projectDetailOpen ? '' : `
-                <button class="project-detail-restore" type="button" data-project-detail-sidebar="open" aria-label="展开项目详情">
-                  <i data-lucide="panel-right-open"></i>
-                  <span>项目详情</span>
-                </button>
-              `}
-            </div>
-          </header>
+      <section class="project-board-overview">
+        <section class="project-overview-header">
+          <div>
+            <span class="project-overview-title-row">
+              <h1>${escapeHtml(project.title)}</h1>
+              <button class="project-overview-edit" type="button" data-project-config="${escapeAttribute(project.id)}">
+                <i data-lucide="pencil"></i>
+                <span>编辑</span>
+              </button>
+            </span>
+            <p>${escapeHtml(project.objective || project.summary || '待补充项目目标')}</p>
+          </div>
         </section>
-        ${renderTaskFilterBar(projectIssues, { projectFilter: project.title })}
-        <section class="kanban-board project-kanban">${columns.map((column) => renderKanbanColumn(column, projectIssues)).join('')}</section>
+        <nav class="project-work-tabs" aria-label="项目工作内容">
+          <button class="${state.projectBoardTab === 'tasks' ? 'active' : ''}" type="button" data-project-board-tab="tasks">
+            <span>任务</span><em>${projectIssues.length}</em>
+          </button>
+          <button class="${state.projectBoardTab === 'todos' ? 'active' : ''}" type="button" data-project-board-tab="todos">
+            <span>待办</span><em>${projectTodos.length}</em>
+          </button>
+          <button class="${state.projectBoardTab === 'collaborators' ? 'active' : ''}" type="button" data-project-board-tab="collaborators">
+            <span>项目成员</span><em>${collaboratorCount}</em>
+          </button>
+          <button class="${state.projectBoardTab === 'knowledge' ? 'active' : ''}" type="button" data-project-board-tab="knowledge">
+            <span>关联知识</span><em>${knowledgeCount}</em>
+          </button>
+        </nav>
       </section>
-      ${state.projectDetailOpen ? renderProjectDetailPanel(project) : ''}
+      <section class="project-board-content">
+        <section class="project-board-page">
+          ${projectTabContent}
+        </section>
+      </section>
     </section>
   `;
   return renderBoardWorkspace({
-    boardLabel: '项目看板',
+    boardLabel: null,
     boardContent,
     project,
   });
 }
 
+function renderProjectWorkList(projectIssues, tab) {
+  const isTodo = tab === 'todos';
+  return `
+    <section class="project-work-area">
+      <header>
+        <div>
+          <strong>${isTodo ? '项目待办' : '项目任务'}</strong>
+          <span>${isTodo ? '需要你确认或继续推进的事项' : '项目中的全部执行任务'}</span>
+        </div>
+        ${isTodo ? '' : '<button type="button" data-create-issue><i data-lucide="plus"></i><span>创建任务</span></button>'}
+      </header>
+      ${projectIssues.length ? `
+        <div class="project-work-list">
+          ${projectIssues.map((issue) => `
+            <button type="button" data-issue-id="${escapeAttribute(issue.code)}">
+              <span class="project-work-status"><i data-lucide="${isTodo ? 'circle-check-big' : 'clipboard-list'}"></i></span>
+              <span class="project-work-copy">
+                <strong>${escapeHtml(issue.title)}</strong>
+                <small>${escapeHtml(issue.code)} · ${escapeHtml(issue.owner || '待分配')}</small>
+              </span>
+              <em>${escapeHtml(getIssueStateLabel(issue))}</em>
+              <i data-lucide="chevron-right"></i>
+            </button>
+          `).join('')}
+        </div>
+      ` : `
+        <div class="project-work-empty">
+          <span><i data-lucide="${isTodo ? 'circle-check-big' : 'clipboard-list'}"></i></span>
+          <strong>${isTodo ? '暂无项目待办' : '暂无项目任务'}</strong>
+          <p>${isTodo ? '需要确认或推进的事项会出现在这里。' : '创建第一条任务，开始推进项目。'}</p>
+        </div>
+      `}
+    </section>
+  `;
+}
+
+function renderProjectCollaboratorsPage(project) {
+  const collaborators = getProjectCollaborators(project);
+  const projectMembers = collaborators.filter((member) => !member.isAgent);
+  const expertAgents = collaborators.filter((member) => member.isAgent && member.name !== 'Snack');
+  return `
+    <section class="project-info-tab-page project-collaborators-page">
+      <header class="project-info-tab-header">
+        <div>
+          <h2>项目成员</h2>
+          <p>查看参与项目的成员与专家智能体，或快速选择对象发起群聊。</p>
+        </div>
+        <button class="project-info-chat-entry" type="button" data-project-group-chat-open="${escapeAttribute(project.id)}">
+          <i data-lucide="messages-square"></i>
+          <span>发起群聊</span>
+        </button>
+      </header>
+      <section class="project-collaborator-tab-card">
+        <section>
+          <header><span><i data-lucide="users-round"></i><strong>项目成员</strong></span><em>${projectMembers.length}</em></header>
+          <div class="project-detail-member-list">
+            ${projectMembers.map((member) => renderProjectDetailMemberRow(member, { readOnly: true })).join('')}
+          </div>
+        </section>
+        <section>
+          <header><span><i data-lucide="bot"></i><strong>专家智能体</strong></span><em>${expertAgents.length}</em></header>
+          <div class="project-detail-member-list">
+            ${expertAgents.length
+    ? expertAgents.map((member) => renderProjectDetailMemberRow(member, { readOnly: true })).join('')
+    : '<p class="project-detail-empty">尚未添加专家智能体</p>'}
+          </div>
+        </section>
+      </section>
+    </section>
+  `;
+}
+
+function renderProjectKnowledgePage(project) {
+  const wikiTopics = project.wikiTopics || [];
+  const sourceFolders = (project.sourceFolders || []).map((folder) => (
+    typeof folder === 'string' ? { name: folder, fileCount: null } : folder
+  ));
+  const resourceCount = wikiTopics.length + sourceFolders.length;
+  return `
+    <section class="project-info-tab-page project-knowledge-page">
+      <header class="project-info-tab-header">
+        <div>
+          <h2>关联知识</h2>
+          <p>集中查看项目已连接的语雀空间、LLM Wiki 和本地文件夹。</p>
+        </div>
+        <button class="project-info-config-entry" type="button" data-project-config="${escapeAttribute(project.id)}">
+          <i data-lucide="plus"></i>
+          <span>添加知识</span>
+        </button>
+      </header>
+      <section class="project-knowledge-tab-card">
+        <header><span>已关联知识</span><em>${resourceCount}</em></header>
+        <div class="project-detail-resource-list">
+          ${wikiTopics.map((topic) => `
+            <span><i data-lucide="book-open-text"></i><strong>${escapeHtml(topic)}</strong><small>${topic.includes('空间') ? '语雀空间' : 'LLM Wiki'}</small></span>
+          `).join('')}
+          ${sourceFolders.map((folder) => {
+    const isMeeting = folder.kind === 'meeting';
+    const icon = isMeeting ? 'file-text' : 'folder';
+    const label = isMeeting ? '会议纪要' : (Number.isFinite(folder.fileCount) ? `${folder.fileCount} 个文件` : '本地文件夹');
+    return `<span><i data-lucide="${icon}"></i><strong>${escapeHtml(folder.name)}</strong><small>${label}</small></span>`;
+  }).join('')}
+          ${resourceCount ? '' : `
+            <div class="project-knowledge-tab-empty">
+              <span><i data-lucide="book-open-text"></i></span>
+              <strong>尚未关联知识</strong>
+              <p>通过项目配置添加语雀空间、LLM Wiki 或本地文件夹。</p>
+            </div>
+          `}
+        </div>
+      </section>
+    </section>
+  `;
+}
+
 function renderProjectDetailPanel(project, options = {}) {
   const members = getProjectCollaborators(project);
-  const rules = getProjectOperatingRules(project);
-  const monitoringRules = project.monitoringRules || [];
+  const projectMembers = members.filter((member) => !member.isAgent);
+  const expertAgents = members.filter((member) => member.isAgent && member.name !== 'Snack');
   const wikiTopics = project.wikiTopics || [];
   const inRecordSummary = options.context === 'record-summary';
   const sourceFolders = (project.sourceFolders || []).map((folder) => (
     typeof folder === 'string' ? { name: folder, fileCount: null } : folder
   ));
+  const detailTab = state.projectDetailTab === 'knowledge' ? 'knowledge' : 'collaborators';
+  const collaboratorCount = projectMembers.length + expertAgents.length;
+  const knowledgeCount = wikiTopics.length + sourceFolders.length;
   return `
-    <aside class="project-detail-panel ${inRecordSummary ? 'record-summary-project-detail' : ''}" id="${inRecordSummary ? 'recordSummaryProjectDetail' : 'projectBoardDetail'}" aria-label="${escapeAttribute(project.title)}项目详情">
-      <header class="project-detail-header">
-        <strong>项目详情</strong>
-        <span>
-          <button type="button" aria-label="编辑项目配置" title="编辑项目配置" data-project-config="${escapeAttribute(project.id)}">
-            <i data-lucide="pencil"></i>
+    <aside class="project-detail-panel ${inRecordSummary ? 'record-summary-project-detail' : ''}" id="${inRecordSummary ? 'recordSummaryProjectDetail' : 'projectBoardDetail'}" aria-label="${escapeAttribute(project.title)}协作信息">
+      ${inRecordSummary ? `
+        <header class="project-detail-header">
+          <strong>项目详情</strong>
+          <span>
+            <button type="button" aria-label="关闭项目详情" title="关闭项目详情" data-record-action="close-summary-project-detail">
+              <i data-lucide="panel-right-close"></i>
+            </button>
+          </span>
+        </header>
+      ` : ''}
+
+      ${inRecordSummary ? '' : `
+        <nav class="project-detail-tabs" aria-label="项目协作信息">
+          <button class="${detailTab === 'collaborators' ? 'active' : ''}" type="button" data-project-detail-tab="collaborators">
+            <span>成员与智能体</span><em>${collaboratorCount}</em>
           </button>
-          <button type="button" aria-label="收起项目详情" title="收起项目详情" ${inRecordSummary ? 'data-record-action="close-summary-project-detail"' : 'data-project-detail-sidebar="close"'}>
-            <i data-lucide="panel-right-close"></i>
+          <button class="${detailTab === 'knowledge' ? 'active' : ''}" type="button" data-project-detail-tab="knowledge">
+            <span>关联知识</span><em>${knowledgeCount}</em>
           </button>
-        </span>
-      </header>
+        </nav>
+      `}
 
       <div class="project-detail-scroll">
-        <section class="project-detail-identity">
-          <span class="project-detail-folder"><i data-lucide="folder-kanban"></i></span>
-          <div>
-            <span class="project-detail-scenario">${escapeHtml(project.scenario || '协作项目')}</span>
-            <h3>${escapeHtml(project.title)}</h3>
-            <small>所有者 · ${escapeHtml(currentUserName)}</small>
-          </div>
-        </section>
-
-        <section class="project-detail-section project-detail-objective">
-          <header><strong>项目目标</strong></header>
-          <p>${escapeHtml(project.objective || project.summary || '待补充项目目标')}</p>
-        </section>
-
-        <section class="project-detail-section project-detail-members">
+        ${inRecordSummary || detailTab === 'collaborators' ? `
+        <section class="project-detail-card project-detail-collaborators">
           <header>
-            <strong>成员 <em>${members.length}</em></strong>
-            <button class="project-detail-text-button" type="button" data-member-manager-toggle>
-              <i data-lucide="user-plus"></i>${state.memberManagerOpen ? '收起' : '管理'}
-            </button>
+            ${inRecordSummary
+    ? '<span><i data-lucide="users-round"></i><strong>成员与智能体</strong></span>'
+    : `<span class="project-detail-card-summary">共 ${collaboratorCount} 位协作对象</span>`}
+            ${inRecordSummary ? `<em>${projectMembers.length + expertAgents.length}</em>` : `
+              <button class="project-group-chat-entry" type="button" data-project-group-chat-open="${escapeAttribute(project.id)}">
+                <i data-lucide="messages-square"></i>
+                <span>发起群聊</span>
+              </button>
+            `}
           </header>
-          ${state.memberManagerOpen ? renderProjectDetailMemberManager(project) : ''}
-          <div class="project-detail-member-list">
-            ${members.map(renderProjectDetailMemberRow).join('')}
+          <div class="project-detail-collaborator-groups">
+            <section>
+              <header><strong>项目成员</strong><em>${projectMembers.length}</em></header>
+              <div class="project-detail-member-list">
+                ${projectMembers.map((member) => renderProjectDetailMemberRow(member, { readOnly: true })).join('')}
+              </div>
+            </section>
+            <section>
+              <header><strong>专家智能体</strong><em>${expertAgents.length}</em></header>
+              <div class="project-detail-member-list">
+                ${expertAgents.length
+    ? expertAgents.map((member) => renderProjectDetailMemberRow(member, { readOnly: true })).join('')
+    : '<p class="project-detail-empty">尚未添加专家智能体</p>'}
+              </div>
+            </section>
           </div>
         </section>
+        ` : ''}
 
-        <section class="project-detail-section">
-          <header><strong>项目配置</strong></header>
-          <div class="project-detail-config-list">
-            <div><span><i data-lucide="shield-check"></i>执行方式</span><strong>协助执行</strong><small>关键动作需确认</small></div>
-            <div><span><i data-lucide="user-check"></i>确认人</span><strong>${escapeHtml(currentUserName)}</strong></div>
-            <div><span><i data-lucide="activity"></i>数据监控</span><strong>${monitoringRules.length ? `已启用 ${monitoringRules.length} 条` : '按需配置'}</strong></div>
-          </div>
-        </section>
-
-        <section class="project-detail-section">
-          <header><strong>关联资料</strong></header>
+        ${inRecordSummary || detailTab === 'knowledge' ? `
+        <section class="project-detail-card project-detail-knowledge">
+          <header>
+            ${inRecordSummary
+    ? '<span><i data-lucide="paperclip"></i><strong>关联知识</strong></span>'
+    : `<span class="project-detail-card-summary">${knowledgeCount ? `已关联 ${knowledgeCount} 项知识` : '尚未关联知识'}</span>`}
+            ${inRecordSummary ? `<em>${knowledgeCount}</em>` : ''}
+          </header>
           <div class="project-detail-resource-list">
             ${wikiTopics.map((topic) => `
-              <span><i data-lucide="book-open-text"></i><strong>${escapeHtml(topic)}</strong><small>云端 Wiki</small></span>
+              <span><i data-lucide="book-open-text"></i><strong>${escapeHtml(topic)}</strong><small>${topic.includes('空间') ? '语雀空间' : 'LLM Wiki'}</small></span>
             `).join('')}
             ${sourceFolders.map((folder) => {
     const isMeeting = folder.kind === 'meeting';
@@ -1573,27 +1760,154 @@ function renderProjectDetailPanel(project, options = {}) {
     const label = isMeeting ? '会议纪要' : (Number.isFinite(folder.fileCount) ? `${folder.fileCount} 个文件` : '本地文件夹');
     return `<span><i data-lucide="${icon}"></i><strong>${escapeHtml(folder.name)}</strong><small>${label}</small></span>`;
   }).join('')}
-            ${wikiTopics.length || sourceFolders.length ? '' : '<p class="project-detail-empty">尚未关联 Wiki 或本地文件夹</p>'}
+            ${wikiTopics.length || sourceFolders.length ? '' : '<p class="project-detail-empty">尚未关联知识库或本地文件夹</p>'}
           </div>
         </section>
+        ` : ''}
 
-        <section class="project-detail-section project-detail-rules">
-          <header>
-            <strong>运营规则 <em>${rules.length}</em></strong>
-            <button class="project-detail-text-button" type="button" data-project-config="${escapeAttribute(project.id)}">编辑</button>
-          </header>
-          <div>
-            ${rules.map(([title, detail]) => `
-              <article>
-                <span><i data-lucide="check"></i></span>
-                <div><strong>${escapeHtml(title)}</strong><p>${escapeHtml(detail)}</p></div>
-              </article>
-            `).join('')}
-          </div>
-        </section>
       </div>
     </aside>
   `;
+}
+
+function getProjectGroupChatDirectory(project) {
+  const directory = new Map();
+  const add = (member) => {
+    if (!member?.name || directory.has(member.name)) return;
+    directory.set(member.name, member);
+  };
+  add({ name: currentUserName, isAgent: false, role: '项目发起人' });
+  add({ name: 'Snack', isAgent: true, role: '项目协作伙伴' });
+  getProjectCollaborators(project).forEach(add);
+  return [...directory.values()];
+}
+
+function renderProjectGroupChatModal() {
+  const project = getProjectById(state.projectGroupChatProjectId);
+  if (!project) return '';
+  const directory = getProjectGroupChatDirectory(project);
+  const directoryByName = new Map(directory.map((member) => [member.name, member]));
+  const selectedNames = new Set(state.projectGroupChatSelection);
+  const query = state.projectGroupChatQuery.trim().toLowerCase();
+  const filter = ['human', 'agent'].includes(state.projectGroupChatFilter)
+    ? state.projectGroupChatFilter
+    : 'all';
+  const candidates = directory
+    .filter((member) => member.name !== currentUserName && member.name !== 'Snack')
+    .filter((member) => filter === 'all' || member.isAgent === (filter === 'agent'))
+    .filter((member) => !query || `${member.name} ${member.role}`.toLowerCase().includes(query));
+  const selectedMembers = state.projectGroupChatSelection
+    .map((name) => directoryByName.get(name))
+    .filter(Boolean);
+  return `
+    <section class="project-group-chat-backdrop" data-project-group-chat-backdrop role="presentation">
+      <section class="project-group-chat-modal" role="dialog" aria-modal="true" aria-labelledby="projectGroupChatTitle">
+        <header>
+          <div>
+            <h2 id="projectGroupChatTitle">发起群聊</h2>
+            <p>选择项目成员和专家智能体，完成后快速进入群聊</p>
+          </div>
+          <button type="button" data-project-group-chat-close aria-label="关闭发起群聊"><i data-lucide="x"></i></button>
+        </header>
+        <div class="project-group-chat-body">
+          <section class="project-group-chat-directory">
+            <label class="project-group-chat-search">
+              <i data-lucide="search"></i>
+              <input type="search" value="${escapeAttribute(state.projectGroupChatQuery)}" data-project-group-chat-search placeholder="搜索项目成员或专家智能体" autocomplete="off" />
+            </label>
+            <nav class="project-group-chat-filters" aria-label="群聊对象筛选">
+              <button class="${filter === 'all' ? 'active' : ''}" type="button" data-project-group-chat-filter="all">全部</button>
+              <button class="${filter === 'human' ? 'active' : ''}" type="button" data-project-group-chat-filter="human">项目成员</button>
+              <button class="${filter === 'agent' ? 'active' : ''}" type="button" data-project-group-chat-filter="agent">专家智能体</button>
+            </nav>
+            <div class="project-group-chat-options" role="listbox" aria-label="可加入群聊的对象" aria-multiselectable="true">
+              ${candidates.length ? candidates.map((member) => {
+    const selected = selectedNames.has(member.name);
+    return `
+                  <button class="${selected ? 'selected' : ''}" type="button" role="option" aria-selected="${selected ? 'true' : 'false'}" data-project-group-chat-option="${escapeAttribute(member.name)}">
+                    <span class="project-group-chat-check"><i data-lucide="check"></i></span>
+                    <span class="group-member-avatar ${member.isAgent ? 'agent' : 'human'}">${escapeHtml(member.name.slice(0, 1))}</span>
+                    <span><strong>${escapeHtml(member.name)}</strong><small>${escapeHtml(member.role)}</small></span>
+                    <em>${member.isAgent ? '智能体' : '成员'}</em>
+                  </button>
+                `;
+  }).join('') : '<p class="project-group-chat-empty">没有找到匹配的项目成员或专家智能体</p>'}
+            </div>
+          </section>
+          <aside class="project-group-chat-selected">
+            <header><strong>已选对象</strong><em>${selectedMembers.length}</em></header>
+            <div>
+              ${selectedMembers.map((member) => {
+    const fixed = member.name === currentUserName || member.name === 'Snack';
+    return `
+                  <article class="${member.name === 'Snack' ? 'snack' : ''}">
+                    <span class="group-member-avatar ${member.isAgent ? 'agent' : 'human'}">${member.name === 'Snack' ? '<i data-lucide="sparkles"></i>' : escapeHtml(member.name.slice(0, 1))}</span>
+                    <div><strong>${escapeHtml(member.name)}${member.isAgent ? '<em>Agent</em>' : ''}</strong><small>${escapeHtml(member.role)}</small></div>
+                    ${fixed
+    ? `<small>${member.name === currentUserName ? '创建者' : '默认加入'}</small>`
+    : `<button type="button" data-project-group-chat-option="${escapeAttribute(member.name)}" aria-label="移除 ${escapeAttribute(member.name)}"><i data-lucide="x"></i></button>`}
+                  </article>
+                `;
+  }).join('')}
+            </div>
+            <footer>
+              <button class="secondary-button" type="button" data-project-group-chat-close>取消</button>
+              <button class="primary-button" type="button" data-project-group-chat-complete>完成</button>
+            </footer>
+          </aside>
+        </div>
+      </section>
+    </section>
+  `;
+}
+
+function openProjectGroupChat(projectId) {
+  if (!getProjectById(projectId)) return;
+  state.projectGroupChatOpen = true;
+  state.projectGroupChatProjectId = projectId;
+  state.projectGroupChatQuery = '';
+  state.projectGroupChatFilter = 'all';
+  state.projectGroupChatSelection = [currentUserName, 'Snack'];
+  render();
+  syncProjectGroupChatSearchFocus();
+}
+
+function closeProjectGroupChat() {
+  state.projectGroupChatOpen = false;
+  state.projectGroupChatProjectId = null;
+  state.projectGroupChatQuery = '';
+  state.projectGroupChatFilter = 'all';
+  state.projectGroupChatSelection = [];
+  render();
+}
+
+function toggleProjectGroupChatParticipant(name) {
+  if (!name || name === currentUserName || name === 'Snack') return;
+  state.projectGroupChatSelection = state.projectGroupChatSelection.includes(name)
+    ? state.projectGroupChatSelection.filter((memberName) => memberName !== name)
+    : [...state.projectGroupChatSelection, name];
+  render();
+  syncProjectGroupChatSearchFocus();
+}
+
+function syncProjectGroupChatSearchFocus() {
+  window.setTimeout(() => {
+    const input = document.querySelector('[data-project-group-chat-search]');
+    if (!(input instanceof HTMLInputElement)) return;
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+  }, 0);
+}
+
+function completeProjectGroupChat() {
+  const projectId = state.projectGroupChatProjectId;
+  const participants = [...state.projectGroupChatSelection];
+  state.projectGroupChatOpen = false;
+  state.projectGroupChatProjectId = null;
+  state.projectGroupChatQuery = '';
+  state.projectGroupChatFilter = 'all';
+  state.projectGroupChatSelection = [];
+  createGroupChat(projectId, participants);
 }
 
 function renderProjectDetailMemberManager(project) {
@@ -1620,8 +1934,8 @@ function renderProjectDetailMemberManager(project) {
   `;
 }
 
-function renderProjectDetailMemberRow(member) {
-  const canRemove = member.name !== currentUserName && member.name !== 'Snack';
+function renderProjectDetailMemberRow(member, options = {}) {
+  const canRemove = !options.readOnly && member.name !== currentUserName && member.name !== 'Snack';
   return `
     <article class="project-detail-member-row">
       <span class="group-member-avatar ${member.isAgent ? 'agent' : 'human'}">${escapeHtml(member.name.slice(0, 1))}</span>
@@ -2584,7 +2898,7 @@ function renderBoardWorkspace({ boardLabel, boardContent, project = null }) {
   const activeIssue = getActiveIssueTab(project);
   return `
     <section class="board-workspace ${activeIssue ? 'issue-open' : ''}">
-      ${renderIssueWorkspaceTabs(boardLabel)}
+      ${boardLabel ? renderIssueWorkspaceTabs(boardLabel) : ''}
       <section class="board-workspace-panel">
         ${activeIssue ? renderIssueDetail(activeIssue) : boardContent}
       </section>
@@ -5650,49 +5964,50 @@ function renderProjectCreationModal() {
   const editingProject = getProjectById(state.projectEditingId);
   const projectName = editingProject?.title || '';
   const projectObjective = editingProject?.objective || '';
-  const monitoringRules = (editingProject?.monitoringRules || []).map((rule) => ({
-    ...rule,
-    type: rule.type || getMonitoringMetricInfo(rule.metric, editingProject?.monitoringType)?.type || '',
-  }));
   return `
     <section class="project-create-backdrop" data-project-modal-backdrop role="presentation">
-      <form class="project-create-modal" data-project-create-form role="dialog" aria-modal="true" aria-labelledby="projectCreateTitle">
+      <form class="project-create-modal ${editingProject ? 'project-edit-modal' : ''}" data-project-create-form role="dialog" aria-modal="true" aria-labelledby="projectCreateTitle">
         <header class="project-create-header">
           <div>
-            <h2 id="projectCreateTitle">${editingProject ? '项目设置' : '新建项目'}</h2>
-            <p>${editingProject ? '维护项目目标与数据监控' : '填写项目名称并邀请协作成员，保存后即可进入项目看板'}</p>
+            <h2 id="projectCreateTitle">${editingProject ? '项目配置' : '新建项目'}</h2>
+            ${editingProject ? '' : '<p>填写项目名称并邀请协作成员，保存后即可进入项目看板</p>'}
           </div>
           <button class="project-create-close" type="button" aria-label="关闭${editingProject ? '项目配置' : '新建项目'}" data-project-modal-close>
             <i data-lucide="x"></i>
           </button>
         </header>
-        <section class="project-create-form-body">
-          <label class="project-create-field">
-            <span>项目名称 <em>必填</em></span>
+        <section class="project-create-form-body ${editingProject ? 'project-edit-form-body' : ''}">
+          <label class="project-create-field ${editingProject ? 'project-edit-core-field project-edit-name-field' : ''}">
+            <span><strong>项目名称</strong> <em>必填</em></span>
             <input name="project-name" data-project-create-name value="${escapeAttribute(projectName)}" maxlength="40" autocomplete="off" placeholder="例如：7 月吊车投放监控" required />
+            ${editingProject ? `
+              <small class="project-edit-field-meta">
+                <span>清晰、简短的名称更容易被团队识别</span>
+                <b data-project-name-count>${projectName.length}/40</b>
+              </small>
+            ` : ''}
           </label>
-          <div class="project-create-field project-wiki-topic-field">
-            <span>云端 Wiki Topic <em class="project-field-optional">可多选</em></span>
-            ${renderProjectWikiTopicPicker()}
-            <small>关联后，Snack 可读取所选 Topic 的云端资料；支持同时选择多个 Topic。</small>
-          </div>
-          <div class="project-create-field project-source-folder-field">
-            <span>项目文件夹 <em class="project-field-optional">可选</em></span>
-            ${renderProjectFolderPicker()}
-            <small>选择后，Snack 可读取文件夹内容并在项目内协助编辑。</small>
-          </div>
           ${editingProject ? `
-            <label class="project-create-field">
-              <span>项目目标</span>
-              <textarea name="project-objective" rows="3" maxlength="240" placeholder="描述这个项目希望持续解决的问题和达成的结果">${escapeHtml(projectObjective)}</textarea>
+            <label class="project-create-field project-edit-core-field project-edit-objective-field">
+              <span><strong>项目目标</strong></span>
+              <textarea name="project-objective" rows="5" maxlength="240" placeholder="描述项目目标、背景与协作规范，让 Snack 在项目内提供更准确的协助。例如：团队习惯、输出要求、完成标准等">${escapeHtml(projectObjective)}</textarea>
+              <small>这段内容会作为 Snack 理解项目和协助执行的长期上下文。</small>
             </label>
-            <div class="project-create-field project-monitoring-field">
-              <span>数据监控</span>
-              <small>用自然语言描述一个或多个需要监控的指标，Snack 会识别为可执行规则。</small>
-              ${renderMonitoringRulesEditor(monitoringRules)}
+
+            ${renderProjectMembersModule()}
+
+            ${renderProjectKnowledgeModule()}
+          ` : `
+            <div class="project-create-field project-wiki-topic-field">
+              <span>云端知识 <em class="project-field-optional">可多选</em></span>
+              ${renderProjectWikiTopicPicker()}
+              <small>可选择语雀空间或已经构建好的 LLM Wiki。</small>
             </div>
-          ` : ''}
-          ${editingProject ? '' : `
+            <div class="project-create-field project-source-folder-field">
+              <span>项目文件夹 <em class="project-field-optional">可选</em></span>
+              ${renderProjectFolderPicker()}
+              <small>选择后，Snack 可读取文件夹内容并在项目内协助编辑。</small>
+            </div>
             <div class="project-create-field">
               <span>邀请成员</span>
               ${renderProjectMemberPicker()}
@@ -5707,6 +6022,138 @@ function renderProjectCreationModal() {
       </form>
     </section>
   `;
+}
+
+function renderProjectMembersModule() {
+  const selectedCount = (state.projectCreationMembers || []).length + 1;
+  const editorOpen = state.projectMemberEditorOpen;
+  return `
+    <section class="project-edit-module project-edit-members ${editorOpen ? 'expanded' : ''}" data-project-members-module>
+      <header class="project-edit-module-header">
+        <div class="project-edit-module-title">
+          <span><i data-lucide="users-round"></i></span>
+          <div>
+            <strong>成员 <em>可选</em></strong>
+            <small>项目成员可以共享项目内容，快速发起群聊</small>
+          </div>
+        </div>
+        <span class="project-edit-module-actions">
+          <em>${selectedCount} 位</em>
+          <button type="button" data-project-members-add aria-expanded="${editorOpen ? 'true' : 'false'}">
+            <i data-lucide="${editorOpen ? 'chevron-up' : 'plus'}"></i>
+            <span>${editorOpen ? '收起' : '添加'}</span>
+          </button>
+        </span>
+      </header>
+      ${editorOpen ? `
+        <div class="project-edit-module-body project-edit-members-body">
+          ${renderProjectMemberPicker()}
+        </div>
+      ` : ''}
+    </section>
+  `;
+}
+
+function toggleProjectMembersEditor() {
+  state.projectMemberEditorOpen = !state.projectMemberEditorOpen;
+  state.projectMemberPickerOpen = false;
+  state.projectMemberQuery = '';
+  const module = document.querySelector('[data-project-members-module]');
+  if (!(module instanceof HTMLElement)) return;
+  module.outerHTML = renderProjectMembersModule();
+  renderIcons();
+}
+
+function renderProjectKnowledgeModule() {
+  const topics = state.projectCreationWikiTopics || [];
+  const folders = state.projectCreationFolders || [];
+  const resourceCount = topics.length + folders.length;
+  const editorOpen = state.projectKnowledgeEditorOpen;
+  return `
+    <section class="project-edit-module project-edit-resources ${resourceCount || editorOpen ? 'expanded' : ''}" data-project-knowledge-module>
+      <header class="project-edit-module-header">
+        <div class="project-edit-module-title">
+          <span><i data-lucide="paperclip"></i></span>
+          <div>
+            <strong>关联知识 <em>可选</em></strong>
+            <small>连接语雀空间、LLM Wiki 或本地项目文件</small>
+          </div>
+        </div>
+        <span class="project-edit-module-actions">
+          ${resourceCount ? `<em>${resourceCount} 项</em>` : ''}
+          <button type="button" data-project-knowledge-add aria-expanded="${editorOpen ? 'true' : 'false'}">
+            <i data-lucide="${editorOpen ? 'chevron-up' : 'plus'}"></i>
+            <span>${editorOpen ? '收起' : '添加'}</span>
+          </button>
+        </span>
+      </header>
+      ${resourceCount || editorOpen ? `
+        <div class="project-edit-module-body project-edit-resource-body">
+          ${resourceCount ? `
+            <div class="project-knowledge-selected" aria-label="已关联知识">
+              ${topics.map((topicName) => {
+    const topic = projectWikiTopicOptions.find((option) => option.name === topicName);
+    return `
+                  <span>
+                    <i data-lucide="${topic?.type === 'yuque' ? 'book-open-text' : 'database'}"></i>
+                    <strong>${escapeHtml(topicName)}</strong>
+                    <small>${escapeHtml(topic?.source || '云端知识')}</small>
+                  </span>
+                `;
+  }).join('')}
+              ${folders.map((folder) => `
+                <span>
+                  <i data-lucide="folder"></i>
+                  <strong>${escapeHtml(folder.name)}</strong>
+                  <small>本地知识</small>
+                </span>
+              `).join('')}
+            </div>
+          ` : ''}
+          ${editorOpen ? `
+            <div class="project-knowledge-editor">
+              <section class="project-knowledge-source cloud">
+                <header>
+                  <span><i data-lucide="cloud"></i></span>
+                  <div><strong>云端知识</strong><small>选择语雀空间或已经构建好的 LLM Wiki</small></div>
+                </header>
+                ${renderProjectWikiTopicPicker()}
+              </section>
+              <section class="project-knowledge-source local">
+                <header>
+                  <span><i data-lucide="folder"></i></span>
+                  <div><strong>本地知识</strong><small>关联电脑上的项目资料、文档或代码目录</small></div>
+                </header>
+                <aside class="project-desktop-access-note">
+                  <i data-lucide="monitor-down"></i>
+                  <span>Web 端暂不支持选择本地文件夹，请下载 Snack 桌面端后添加。</span>
+                  <button type="button" data-snack-desktop-download>下载桌面端</button>
+                </aside>
+              </section>
+            </div>
+          ` : ''}
+        </div>
+      ` : ''}
+    </section>
+  `;
+}
+
+function refreshProjectKnowledgeModule() {
+  const module = document.querySelector('[data-project-knowledge-module]');
+  if (!(module instanceof HTMLElement)) return false;
+  module.outerHTML = renderProjectKnowledgeModule();
+  renderIcons();
+  return true;
+}
+
+function toggleProjectKnowledgeEditor() {
+  state.projectKnowledgeEditorOpen = !state.projectKnowledgeEditorOpen;
+  state.projectWikiTopicPickerOpen = false;
+  if (state.projectMemberPickerOpen) {
+    state.projectMemberPickerOpen = false;
+    refreshProjectMemberPicker();
+  }
+  refreshProjectKnowledgeModule();
 }
 
 function renderMonitoringRulesEditor(rules = []) {
@@ -5956,15 +6403,21 @@ function openProjectCreationModal(projectId = null) {
   state.issueCreationOpen = false;
   state.issueCreationProjectId = null;
   state.projectEditingId = editingProject?.id || null;
-  state.projectCreationMembers = [];
+  state.projectCreationMembers = editingProject
+    ? getProjectCollaborators(editingProject)
+      .filter((member) => member.name !== currentUserName && member.name !== 'Snack')
+      .map((member) => ({ name: member.name, isAgent: member.isAgent, role: member.role }))
+    : [];
   state.projectCreationWikiTopics = [...(editingProject?.wikiTopics || [])];
   state.projectWikiTopicPickerOpen = false;
-  state.projectCreationFolders = (editingProject?.sourceFolders || []).map((folder) => ({
-    name: typeof folder === 'string' ? folder : folder.name,
-    fileCount: typeof folder === 'string' ? null : folder.fileCount,
-  }));
+  state.projectKnowledgeEditorOpen = false;
+  state.projectCreationFolders = (editingProject?.sourceFolders || []).map((folder) => (
+    typeof folder === 'string' ? { name: folder, fileCount: null } : { ...folder }
+  ));
   state.projectMemberQuery = '';
   state.projectMemberPickerOpen = false;
+  state.projectMemberPickerType = 'human';
+  state.projectMemberEditorOpen = false;
   state.openProjectMenuId = null;
   state.openProjectCreateMenuId = null;
   state.modelPickerOpen = false;
@@ -5980,9 +6433,12 @@ function closeProjectCreationModal() {
   state.projectCreationMembers = [];
   state.projectCreationWikiTopics = [];
   state.projectWikiTopicPickerOpen = false;
+  state.projectKnowledgeEditorOpen = false;
   state.projectCreationFolders = [];
   state.projectMemberQuery = '';
   state.projectMemberPickerOpen = false;
+  state.projectMemberPickerType = 'human';
+  state.projectMemberEditorOpen = false;
   render();
 }
 
@@ -5991,7 +6447,7 @@ function renderProjectWikiTopicPicker() {
   const selectedTopicNames = new Set(selectedTopics);
   const selectionLabel = selectedTopics.length
     ? `已选择 ${selectedTopics.join('、')}`
-    : '尚未选择云端 Wiki Topic';
+    : '尚未选择云端知识';
   return `
     <div class="project-wiki-topic-picker ${state.projectWikiTopicPickerOpen ? 'open' : ''}" data-project-wiki-topic-picker>
       <button
@@ -6005,15 +6461,19 @@ function renderProjectWikiTopicPicker() {
       >
         <span class="project-wiki-topic-selection" aria-live="polite">
           ${selectedTopics.length
-    ? selectedTopics.map((topic) => `<span class="project-wiki-topic-chip"><i data-lucide="book-open-text"></i>${escapeHtml(topic)}</span>`).join('')
-    : '<span class="project-wiki-topic-placeholder">选择云端 Wiki Topic</span>'}
+    ? selectedTopics.map((topicName) => {
+      const topic = projectWikiTopicOptions.find((option) => option.name === topicName);
+      return `<span class="project-wiki-topic-chip"><i data-lucide="${topic?.type === 'yuque' ? 'book-open-text' : 'database'}"></i>${escapeHtml(topicName)}</span>`;
+    }).join('')
+    : '<span class="project-wiki-topic-placeholder">选择语雀空间或 LLM Wiki</span>'}
         </span>
         <i class="project-wiki-topic-chevron" data-lucide="chevron-down"></i>
       </button>
       ${state.projectWikiTopicPickerOpen ? `
-        <section class="project-wiki-topic-options" id="projectWikiTopicOptions" role="listbox" aria-label="云端 Wiki Topic" aria-multiselectable="true">
+        <section class="project-wiki-topic-options" id="projectWikiTopicOptions" role="listbox" aria-label="可关联的云端知识" aria-multiselectable="true">
           ${projectWikiTopicOptions.map((topic) => {
     const isSelected = selectedTopicNames.has(topic.name);
+    const icon = topic.type === 'yuque' ? 'book-open-text' : 'database';
     return `
               <button
                 class="project-wiki-topic-option ${isSelected ? 'selected' : ''}"
@@ -6022,16 +6482,16 @@ function renderProjectWikiTopicPicker() {
                 aria-selected="${isSelected ? 'true' : 'false'}"
                 data-project-wiki-topic-option="${escapeAttribute(topic.name)}"
               >
-                <span class="project-wiki-topic-icon"><i data-lucide="book-open-text"></i></span>
+                <span class="project-wiki-topic-icon ${escapeAttribute(topic.type)}"><i data-lucide="${icon}"></i></span>
                 <span class="project-wiki-topic-copy">
                   <strong>${escapeHtml(topic.name)}</strong>
-                  <small>${escapeHtml(topic.description)}</small>
+                  <small><em>${escapeHtml(topic.source)}</em>${escapeHtml(topic.description)}</small>
                 </span>
                 <span class="project-wiki-topic-check" aria-hidden="true"><i data-lucide="check"></i></span>
               </button>
             `;
   }).join('')}
-          <footer>${selectedTopics.length ? `已选择 ${selectedTopics.length} 个 Topic` : '可选择多个 Topic'}</footer>
+          <footer>${selectedTopics.length ? `已选择 ${selectedTopics.length} 项知识来源` : '支持同时选择多个知识来源'}</footer>
         </section>
       ` : ''}
     </div>
@@ -6069,7 +6529,7 @@ function toggleProjectWikiTopic(topicName) {
     .map((topic) => topic.name)
     .filter((name) => selectedTopicNames.has(name));
   state.projectWikiTopicPickerOpen = true;
-  refreshProjectWikiTopicPicker();
+  if (!refreshProjectKnowledgeModule()) refreshProjectWikiTopicPicker();
 }
 
 function renderProjectFolderPicker() {
@@ -6150,9 +6610,37 @@ function renderProjectMemberPicker() {
   const selectedMembers = state.projectCreationMembers || [];
   const selectedNames = new Set(selectedMembers.map((member) => member.name));
   const query = state.projectMemberQuery.trim().toLowerCase();
+  const grouped = Boolean(state.projectEditingId);
+  const activeType = state.projectMemberPickerType === 'agent' ? 'agent' : 'human';
   const options = getProjectMemberDirectory()
     .filter((member) => !selectedNames.has(member.name))
+    .filter((member) => !grouped || member.isAgent === (activeType === 'agent'))
     .filter((member) => !query || `${member.name} ${member.role} ${member.isAgent ? 'agent 智能体' : '人员 同事'}`.toLowerCase().includes(query));
+  if (grouped) {
+    const selectedPeople = [
+      { name: currentUserName, isAgent: false, role: '项目发起人', locked: true },
+      ...selectedMembers.filter((member) => !member.isAgent),
+    ];
+    const selectedAgents = selectedMembers.filter((member) => member.isAgent);
+    return `
+      <div class="project-member-picker project-member-source-list ${state.projectMemberPickerOpen ? 'open' : ''}" data-project-member-picker>
+          ${renderProjectMemberSource(
+    'human',
+    '项目成员',
+    '选择可以查看项目内容并参与群聊的成员',
+    selectedPeople,
+    state.projectMemberPickerOpen && activeType === 'human' ? options : null,
+  )}
+          ${renderProjectMemberSource(
+    'agent',
+    '专家智能体',
+    '选择 Snack 现有的智能体员工参与项目',
+    selectedAgents,
+    state.projectMemberPickerOpen && activeType === 'agent' ? options : null,
+  )}
+      </div>
+    `;
+  }
   return `
     <div class="project-member-picker ${state.projectMemberPickerOpen ? 'open' : ''}" data-project-member-picker>
       <div class="project-member-control">
@@ -6166,6 +6654,7 @@ function renderProjectMemberPicker() {
           </span>
         `).join('')}
         <input
+          id="projectMemberSearch"
           type="search"
           data-project-member-search
           value="${escapeAttribute(state.projectMemberQuery)}"
@@ -6194,6 +6683,64 @@ function renderProjectMemberPicker() {
   `;
 }
 
+function renderProjectMemberSource(type, title, description, members, options = null) {
+  const pickerOpen = Array.isArray(options);
+  const pickerLabel = type === 'agent' ? '专家智能体' : '项目成员';
+  return `
+    <section class="project-member-source ${type}">
+      <header>
+        <span><i data-lucide="${type === 'agent' ? 'bot' : 'user-round'}"></i></span>
+        <div>
+          <strong>${escapeHtml(title)}</strong>
+          <small>${escapeHtml(description)}</small>
+        </div>
+      </header>
+      <div class="project-member-source-control ${pickerOpen ? 'open' : ''}">
+        <div class="project-member-source-selection">
+          ${members.length ? members.map((member) => `
+          <span class="project-member-selected ${member.isAgent ? 'agent' : 'human'}">
+            <em>${escapeHtml(member.name.slice(0, 1))}</em>
+            <strong>${escapeHtml(member.name)}</strong>
+            ${member.locked ? '' : `
+              <button type="button" aria-label="移除 ${escapeAttribute(member.name)}" data-project-member-remove="${escapeAttribute(member.name)}">
+                <i data-lucide="x"></i>
+              </button>
+            `}
+          </span>
+          `).join('') : `<span class="project-member-source-placeholder">选择${pickerLabel}</span>`}
+        </div>
+        <button type="button" data-project-member-add="${type}" aria-expanded="${pickerOpen ? 'true' : 'false'}">
+          <span>${members.length ? '继续添加' : `选择${pickerLabel}`}</span>
+          <i data-lucide="chevron-down"></i>
+        </button>
+      </div>
+      ${pickerOpen ? `
+        <section class="project-member-inline-picker" id="projectMemberOptions" role="listbox" aria-label="可添加的${pickerLabel}">
+          <label class="project-member-option-search">
+            <i data-lucide="search"></i>
+            <input
+              id="projectMemberSearch"
+              type="search"
+              data-project-member-search
+              value="${escapeAttribute(state.projectMemberQuery)}"
+              autocomplete="off"
+              aria-label="搜索${pickerLabel}"
+              aria-expanded="true"
+              aria-controls="projectMemberOptions"
+              placeholder="搜索${type === 'agent' ? 'Snack 智能体员工' : '项目成员'}"
+            />
+          </label>
+          <div class="project-member-option-list">
+            ${options.length ? options.map(renderProjectMemberOption).join('') : `
+              <p class="project-member-empty">没有找到可添加的${pickerLabel}</p>
+            `}
+          </div>
+        </section>
+      ` : ''}
+    </section>
+  `;
+}
+
 function renderProjectMemberOption(member) {
   return `
     <button class="project-member-option" type="button" role="option" data-project-member-option="${escapeAttribute(member.name)}">
@@ -6204,7 +6751,7 @@ function renderProjectMemberOption(member) {
         <strong>${escapeHtml(member.name)}</strong>
         <small>${escapeHtml(member.role)}</small>
       </span>
-      <em>${member.isAgent ? 'Agent' : '人员'}</em>
+      <em>${member.isAgent ? '智能体员工' : '项目成员'}</em>
     </button>
   `;
 }
@@ -6236,6 +6783,13 @@ function getProjectMemberDirectory() {
 }
 
 function refreshProjectMemberPicker(options = {}) {
+  const module = document.querySelector('[data-project-members-module]');
+  if (module instanceof HTMLElement && state.projectEditingId) {
+    module.outerHTML = renderProjectMembersModule();
+    renderIcons();
+    if (options.focusSearch) syncProjectMemberSearchFocus();
+    return;
+  }
   const picker = document.querySelector('[data-project-member-picker]');
   if (!(picker instanceof HTMLElement)) return;
   picker.outerHTML = renderProjectMemberPicker();
@@ -6252,11 +6806,22 @@ function syncProjectMemberSearchFocus() {
   }, 0);
 }
 
-function openProjectMemberPicker() {
+function toggleProjectMemberPicker(type) {
+  const normalizedType = type === 'agent' ? 'agent' : 'human';
+  if (state.projectMemberPickerOpen && state.projectMemberPickerType === normalizedType) {
+    closeProjectMemberPicker();
+    return;
+  }
+  openProjectMemberPicker(normalizedType);
+}
+
+function openProjectMemberPicker(type = state.projectMemberPickerType) {
   if (state.projectWikiTopicPickerOpen) {
     state.projectWikiTopicPickerOpen = false;
     refreshProjectWikiTopicPicker();
   }
+  state.projectMemberPickerType = type === 'agent' ? 'agent' : 'human';
+  state.projectMemberQuery = '';
   state.projectMemberPickerOpen = true;
   refreshProjectMemberPicker({ focusSearch: true });
 }
@@ -6278,6 +6843,10 @@ function selectProjectMember(name) {
 
 function removeProjectMember(name) {
   state.projectCreationMembers = state.projectCreationMembers.filter((member) => member.name !== name);
+  if (state.projectEditingId) {
+    refreshProjectMemberPicker({ focusSearch: state.projectMemberPickerOpen });
+    return;
+  }
   state.projectMemberPickerOpen = true;
   refreshProjectMemberPicker({ focusSearch: true });
 }
@@ -6292,8 +6861,11 @@ function createNewProject(form) {
   const invitedMembers = [...state.projectCreationMembers];
   const invitedPeople = invitedMembers.filter((member) => !member.isAgent);
   const invitedAgents = invitedMembers.filter((member) => member.isAgent);
-  const monitoringDraft = String(formData.get('monitoring-rule-draft') || '').trim();
-  const monitoringRules = parseProjectMonitoringRules(formData);
+  const hasMonitoringEditor = Boolean(form.querySelector('[data-monitoring-rules-editor]'));
+  const monitoringDraft = hasMonitoringEditor ? String(formData.get('monitoring-rule-draft') || '').trim() : '';
+  const monitoringRules = hasMonitoringEditor
+    ? parseProjectMonitoringRules(formData)
+    : (editingProject?.monitoringRules || []).map((rule) => ({ ...rule }));
   const monitoringTypes = [...new Set(monitoringRules.map((rule) => rule.type).filter(Boolean))];
   const monitoringType = monitoringTypes.length === 1 ? monitoringTypes[0] : monitoringTypes.length ? 'mixed' : '';
   const operatingRules = mergeProjectMonitoringOperatingRules(editingProject, monitoringRules);
@@ -6314,9 +6886,23 @@ function createNewProject(form) {
     return;
   }
   if (editingProject) {
+    const previousRememberedPeople = new Map(editingProject.rememberedPeople || []);
     editingProject.title = title;
     editingProject.summary = objective ? truncateProjectSummary(objective) : '等待补充项目目标';
     editingProject.objective = objective || '待补充项目目标';
+    editingProject.members = [currentUserName, ...invitedPeople.map((member) => member.name)];
+    editingProject.agents = ['Snack', ...invitedAgents.map((member) => member.name)];
+    editingProject.rememberedPeople = [
+      [currentUserName, previousRememberedPeople.get(currentUserName) || '项目发起人，负责目标确认和执行授权'],
+      ...invitedPeople.map((member) => [
+        member.name,
+        previousRememberedPeople.get(member.name) || '受邀项目成员，参与项目协作和任务确认',
+      ]),
+      ...invitedAgents.map((member) => [
+        member.name,
+        previousRememberedPeople.get(member.name) || `受邀 ${member.role}，按项目任务节点处理对应工作`,
+      ]),
+    ];
     editingProject.wikiTopics = wikiTopics;
     editingProject.sourceFolders = sourceFolders;
     editingProject.monitoringType = monitoringType;
@@ -6329,11 +6915,14 @@ function createNewProject(form) {
     state.projectCreationMembers = [];
     state.projectCreationWikiTopics = [];
     state.projectWikiTopicPickerOpen = false;
+    state.projectKnowledgeEditorOpen = false;
     state.projectCreationFolders = [];
     state.projectMemberQuery = '';
     state.projectMemberPickerOpen = false;
+    state.projectMemberPickerType = 'human';
+    state.projectMemberEditorOpen = false;
     render();
-    showToast('项目配置已保存');
+    showToast('项目修改已保存');
     return;
   }
   const serial = state.projectSerial;
@@ -6361,9 +6950,12 @@ function createNewProject(form) {
   state.projectEditingId = null;
   state.projectCreationWikiTopics = [];
   state.projectWikiTopicPickerOpen = false;
+  state.projectKnowledgeEditorOpen = false;
   state.projectCreationFolders = [];
   state.view = 'projectBoard';
   state.taskTab = 'projects';
+  state.projectBoardTab = 'tasks';
+  state.projectDetailTab = 'collaborators';
   state.activeProject = projectId;
   state.activeSession = null;
   state.activeIssue = null;
@@ -6871,6 +7463,8 @@ function openProject(projectId) {
   state.composerProjectId = projectId;
   state.view = 'projectBoard';
   state.taskTab = 'projects';
+  state.projectBoardTab = 'tasks';
+  state.projectDetailTab = 'collaborators';
   state.activeProject = projectId;
   state.activeSession = null;
   state.activeIssue = null;
@@ -7143,14 +7737,22 @@ function createSingleChat(projectId) {
   render();
 }
 
-function createGroupChat(projectId) {
+function createGroupChat(projectId, participants = null) {
   const project = getProjectById(projectId);
   if (!project) return;
   if (!project.groupMessages || !project.groupMessages.length) {
     project.groupMessages = [
-      ['田晓柔', `创建「${project.title}」项目群。`, '刚刚'],
+      [currentUserName, `创建「${project.title}」项目群。`, '刚刚'],
       ['Snack', '项目群已创建。我会把成员、Agent 和后续任务进展同步到这里。', '刚刚'],
     ];
+  }
+  if (Array.isArray(participants)) {
+    const invitedNames = participants.filter((name) => name !== currentUserName && name !== 'Snack');
+    project.activeGroupParticipants = [...new Set([currentUserName, 'Snack', ...invitedNames])];
+    project.groupMessages.push(
+      [currentUserName, invitedNames.length ? `发起群聊，邀请 ${invitedNames.join('、')} 加入。` : '发起一个新的项目群聊。', '刚刚'],
+      ['Snack', '我已加入群聊，会结合项目目标、任务和关联知识协助大家推进。', '刚刚'],
+    );
   }
   if (state.collapsedProjects.includes(projectId)) {
     state.collapsedProjects = state.collapsedProjects.filter((id) => id !== projectId);
@@ -8120,7 +8722,7 @@ function handleBodyClick(event) {
   if (state.projectMemberPickerOpen && !clickedInsideMemberPicker) closeProjectMemberPicker();
   const clickedInsideWikiTopicPicker = event.target.closest('[data-project-wiki-topic-picker]');
   if (state.projectWikiTopicPickerOpen && !clickedInsideWikiTopicPicker) closeProjectWikiTopicPicker();
-  const target = event.target.closest('[data-view], [data-create-project], [data-project-config], [data-project-detail-sidebar], [data-project-modal-close], [data-project-modal-backdrop], [data-create-issue], [data-issue-modal-close], [data-issue-modal-backdrop], [data-project-folder-remove], [data-project-wiki-topic-toggle], [data-project-wiki-topic-option], [data-project-member-picker], [data-project-member-search], [data-project-member-option], [data-project-member-remove], [data-monitoring-rule-recognize], [data-monitoring-rule-edit], [data-monitoring-rule-remove], [data-project-intake-submit], [data-meeting-intake-submit], [data-mock-action], [data-confirmation-action], [data-confirmation-cancel], [data-model-menu], [data-model-select], [data-project-picker], [data-project-context], [data-project-context-empty], [data-project-picker-search], [data-agent-status-toggle], [data-task-tab], [data-task-filter], [data-issue-tab], [data-close-issue-tab], [data-todo-inbox-issue], [data-issue-id], [data-log-doc], [data-close-log-doc], [data-project-open], [data-project-toggle], [data-project-sessions], [data-project-session], [data-project-menu], [data-project-action], [data-project-create-menu], [data-project-create-action], [data-loose-session], [data-board-sidebar], [data-member-sidebar], [data-member-tab], [data-member-manager-toggle], [data-member-manager-add], [data-member-manager-remove], [data-agent-tab], [data-agent-chat], [data-agent-menu], [data-agent-select], [data-resource-tab], [data-toast]');
+  const target = event.target.closest('[data-view], [data-create-project], [data-project-config], [data-project-detail-sidebar], [data-project-detail-tab], [data-project-modal-close], [data-project-modal-backdrop], [data-project-group-chat-open], [data-project-group-chat-close], [data-project-group-chat-backdrop], [data-project-group-chat-filter], [data-project-group-chat-option], [data-project-group-chat-complete], [data-create-issue], [data-issue-modal-close], [data-issue-modal-backdrop], [data-project-folder-remove], [data-project-wiki-topic-toggle], [data-project-wiki-topic-option], [data-project-knowledge-add], [data-project-members-add], [data-project-member-picker], [data-project-member-add], [data-project-member-search], [data-project-member-option], [data-project-member-remove], [data-snack-desktop-download], [data-monitoring-rule-recognize], [data-monitoring-rule-edit], [data-monitoring-rule-remove], [data-project-intake-submit], [data-meeting-intake-submit], [data-mock-action], [data-confirmation-action], [data-confirmation-cancel], [data-model-menu], [data-model-select], [data-project-picker], [data-project-context], [data-project-context-empty], [data-project-picker-search], [data-agent-status-toggle], [data-task-tab], [data-task-filter], [data-project-board-tab], [data-issue-tab], [data-close-issue-tab], [data-todo-inbox-issue], [data-issue-id], [data-log-doc], [data-close-log-doc], [data-project-open], [data-project-toggle], [data-project-sessions], [data-project-session], [data-project-menu], [data-project-action], [data-project-create-menu], [data-project-create-action], [data-loose-session], [data-board-sidebar], [data-member-sidebar], [data-member-tab], [data-member-manager-toggle], [data-member-manager-add], [data-member-manager-remove], [data-agent-tab], [data-agent-chat], [data-agent-menu], [data-agent-select], [data-resource-tab], [data-toast]');
   if (!target) {
     if (state.openProjectMenuId || state.openProjectCreateMenuId || state.modelPickerOpen || state.projectPickerOpen) {
       state.openProjectMenuId = null;
@@ -8141,7 +8743,10 @@ function handleBodyClick(event) {
     || (target.dataset.projectPickerSearch !== undefined)
     || (target.dataset.projectWikiTopicToggle !== undefined)
     || target.dataset.projectWikiTopicOption
+    || (target.dataset.projectKnowledgeAdd !== undefined)
+    || (target.dataset.projectMembersAdd !== undefined)
     || (target.dataset.projectMemberPicker !== undefined)
+    || target.dataset.projectMemberAdd
     || (target.dataset.projectMemberSearch !== undefined)
     || target.dataset.projectMemberOption
     || target.dataset.projectMemberRemove;
@@ -8161,15 +8766,41 @@ function handleBodyClick(event) {
     if (event.target === target) closeIssueCreationModal();
     return;
   }
+  if (target.dataset.projectGroupChatClose !== undefined) return closeProjectGroupChat();
+  if (target.dataset.projectGroupChatBackdrop !== undefined) {
+    if (event.target === target) closeProjectGroupChat();
+    return;
+  }
+  if (target.dataset.projectGroupChatOpen) return openProjectGroupChat(target.dataset.projectGroupChatOpen);
+  if (target.dataset.projectGroupChatFilter) {
+    state.projectGroupChatFilter = target.dataset.projectGroupChatFilter;
+    render();
+    syncProjectGroupChatSearchFocus();
+    return;
+  }
+  if (target.dataset.projectGroupChatOption) return toggleProjectGroupChatParticipant(target.dataset.projectGroupChatOption);
+  if (target.dataset.projectGroupChatComplete !== undefined) return completeProjectGroupChat();
   if (target.dataset.projectDetailSidebar) return setProjectDetailSidebar(target.dataset.projectDetailSidebar);
+  if (target.dataset.projectDetailTab) {
+    state.projectDetailTab = target.dataset.projectDetailTab === 'knowledge' ? 'knowledge' : 'collaborators';
+    render();
+    return;
+  }
   if (target.dataset.createIssue !== undefined) return openIssueCreationModal();
   if (target.dataset.projectConfig) return openProjectCreationModal(target.dataset.projectConfig);
   if (target.dataset.projectFolderRemove) return removeProjectFolder(target.dataset.projectFolderRemove);
   if (target.dataset.projectWikiTopicToggle !== undefined) return toggleProjectWikiTopicPicker();
   if (target.dataset.projectWikiTopicOption) return toggleProjectWikiTopic(target.dataset.projectWikiTopicOption);
+  if (target.dataset.projectKnowledgeAdd !== undefined) return toggleProjectKnowledgeEditor();
+  if (target.dataset.projectMembersAdd !== undefined) return toggleProjectMembersEditor();
+  if (target.dataset.projectMemberAdd) return toggleProjectMemberPicker(target.dataset.projectMemberAdd);
   if (target.dataset.projectMemberOption) return selectProjectMember(target.dataset.projectMemberOption);
   if (target.dataset.projectMemberRemove) return removeProjectMember(target.dataset.projectMemberRemove);
-  if (target.dataset.projectMemberSearch !== undefined || target.dataset.projectMemberPicker !== undefined) return openProjectMemberPicker();
+  if (target.dataset.projectMemberSearch !== undefined || target.dataset.projectMemberPicker !== undefined) {
+    if (!state.projectMemberPickerOpen) openProjectMemberPicker();
+    return;
+  }
+  if (target.dataset.snackDesktopDownload !== undefined) return showToast('请前往 Snack 官网下载桌面端');
   if (target.dataset.monitoringRuleRecognize !== undefined) return recognizeMonitoringRules(target);
   if (target.dataset.monitoringRuleEdit !== undefined) return editMonitoringRule(target);
   if (target.dataset.monitoringRuleRemove !== undefined) return removeMonitoringRule(target);
@@ -8179,6 +8810,14 @@ function handleBodyClick(event) {
   if (target.dataset.projectContext) return selectProjectContext(target.dataset.projectContext);
   if (target.dataset.projectContextEmpty !== undefined) return clearProjectContext();
   if (target.dataset.projectPickerSearch !== undefined) return;
+  if (target.dataset.projectBoardTab) {
+    state.projectBoardTab = ['todos', 'collaborators', 'knowledge'].includes(target.dataset.projectBoardTab)
+      ? target.dataset.projectBoardTab
+      : 'tasks';
+    state.activeIssueTab = null;
+    render();
+    return;
+  }
   if (target.dataset.createProject !== undefined) return openProjectCreationModal();
   if (target.dataset.projectMenu) return toggleProjectMenu(target.dataset.projectMenu);
   if (target.dataset.projectAction) return runProjectMenuAction(target.dataset.projectAction, target.dataset.projectId);
@@ -8275,6 +8914,17 @@ document.body.addEventListener('submit', (event) => {
   }
 });
 document.body.addEventListener('input', (event) => {
+  if (event.target instanceof HTMLInputElement && event.target.dataset.projectGroupChatSearch !== undefined) {
+    state.projectGroupChatQuery = event.target.value;
+    render();
+    syncProjectGroupChatSearchFocus();
+    return;
+  }
+  if (event.target instanceof HTMLInputElement && event.target.dataset.projectCreateName !== undefined) {
+    const counter = event.target.closest('.project-edit-name-field')?.querySelector('[data-project-name-count]');
+    if (counter instanceof HTMLElement) counter.textContent = `${event.target.value.length}/40`;
+    return;
+  }
   if (event.target instanceof HTMLInputElement && event.target.dataset.recordProjectName !== undefined) {
     state.snackRecordFollowupProjectName = event.target.value;
     return;
