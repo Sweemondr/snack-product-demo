@@ -64,7 +64,7 @@ function saveSnackRecordConfig() {
 const savedSnackRecordConfig = loadSnackRecordConfig();
 
 const state = {
-  view: 'tasks',
+  view: 'projectBoard',
   taskTab: 'projects',
   activeProject: 'snack-product-iteration',
   meetingReturnView: 'tasks',
@@ -101,6 +101,16 @@ const state = {
   collapsedProjects: [],
   expandedSessionLists: [],
   taskFilterOpen: false,
+  taskFilterCategory: 'status',
+  taskFilterQuery: '',
+  taskFilters: {
+    status: '',
+    priority: '',
+    date: '',
+    owner: '',
+    reporter: '',
+    project: '',
+  },
   renamingProjectId: null,
   openProjectMenuId: null,
   openProjectCreateMenuId: null,
@@ -449,7 +459,9 @@ const projectFolders = [
   },
 ];
 
-state.collapsedProjects = projectFolders.map((project) => project.id);
+state.collapsedProjects = projectFolders
+  .filter((project) => project.id !== state.activeProject)
+  .map((project) => project.id);
 
 const issues = [
   {
@@ -1056,6 +1068,13 @@ function renderTopbarActions() {
 function renderProjectHistory() {
   const looseConversationList = getSortedLooseSessions();
   projectHistory.innerHTML = `
+    <div class="sidebar-section-header">
+      <div class="section-title">项目</div>
+      <button class="sidebar-project-create" data-create-project aria-label="新建项目" title="新建项目">
+        <i data-lucide="plus"></i>
+      </button>
+    </div>
+    <div class="history-tree">${getVisibleProjectFolders().map(renderHistoryProject).join('')}</div>
     <div class="section-title dialogue-title">对话</div>
     <div class="loose-session-list conversation-drop-zone ${looseConversationList.length ? '' : 'empty'}" data-conversation-drop-zone="loose" aria-label="未归入项目的对话">
       ${looseConversationList.length
@@ -1066,13 +1085,6 @@ function renderProjectHistory() {
             <small>可将项目内对话拖到这里</small>
           </div>`}
     </div>
-    <div class="sidebar-section-header">
-      <div class="section-title">项目</div>
-      <button class="sidebar-project-create" data-create-project aria-label="新建项目" title="新建项目">
-        <i data-lucide="plus"></i>
-      </button>
-    </div>
-    <div class="history-tree">${getVisibleProjectFolders().map(renderHistoryProject).join('')}</div>
   `;
 }
 
@@ -1140,18 +1152,21 @@ function renderProjectMoreMenu(project) {
 
 function renderProjectSessions(project) {
   const boardActive = state.view === 'projectBoard' && state.activeProject === project.id;
-  const groupActive = state.view === 'project' && state.activeProject === project.id && state.activeSession === 'group';
-  const groupSession = project.groupMessages && project.groupMessages.length
-    ? [{
-      id: 'group',
-      title: '项目群聊',
-      updated: '',
-      pinned: true,
-      active: groupActive,
-    }]
-    : [];
+  const groupSessions = getProjectGroups(project).map((group) => ({
+    id: `team-chat-${group.id}`,
+    groupId: group.id,
+    kind: 'team-chat',
+    title: group.name || '未命名群聊',
+    participants: group.participants || [],
+    updated: '',
+    pinned: true,
+    active: state.view === 'project'
+      && state.activeProject === project.id
+      && state.activeSession === 'group'
+      && project.activeGroupId === group.id,
+  }));
   const allSessions = [
-    ...groupSession,
+    ...groupSessions,
     ...project.sessions.map((session) => ({
       ...session,
       pinned: false,
@@ -1174,12 +1189,35 @@ function renderProjectSessions(project) {
 
 function renderHistorySession(project, session) {
   const movable = !session.pinned;
+  const isTeamChat = session.kind === 'team-chat';
+  const navigationAttributes = isTeamChat
+    ? `data-project-group-enter="${escapeAttribute(project.id)}" data-project-group-id="${escapeAttribute(session.groupId)}"`
+    : `data-project-session="${project.id}:${session.id}"`;
   return `
-    <button class="history-session ${session.pinned ? 'pinned' : ''} ${session.active ? 'active' : ''}" data-project-session="${project.id}:${session.id}" ${movable ? `draggable="true" data-conversation-origin="project" data-conversation-id="${session.id}" data-conversation-project="${project.id}" title="拖拽可移动到其他项目或移出项目"` : ''}>
-      <i data-lucide="${session.icon || (session.pinned ? 'messages-square' : 'message-square')}"></i>
+    <button class="history-session ${isTeamChat ? 'team-chat-session' : ''} ${session.pinned ? 'pinned' : ''} ${session.active ? 'active' : ''}" ${navigationAttributes} ${movable ? `draggable="true" data-conversation-origin="project" data-conversation-id="${session.id}" data-conversation-project="${project.id}" title="拖拽可移动到其他项目或移出项目"` : ''}>
+      ${isTeamChat ? renderSidebarGroupAvatarStack(project, session) : `<i data-lucide="${session.icon || (session.pinned ? 'messages-square' : 'message-square')}"></i>`}
       <span>${session.title}</span>
       ${session.updated ? `<small>${session.updated}</small>` : ''}
     </button>
+  `;
+}
+
+function renderSidebarGroupAvatarStack(project, session) {
+  const directory = new Map(getProjectGroupChatDirectory(project).map((member) => [member.name, member]));
+  const members = (session.participants || [])
+    .map((name) => directory.get(name) || { name, isAgent: name === 'Snack' || name.endsWith('Agent') })
+    .slice(0, 3);
+  if (!members.length) {
+    return '<span class="history-team-avatar-stack empty"><i data-lucide="users-round"></i></span>';
+  }
+  return `
+    <span class="history-team-avatar-stack" aria-hidden="true">
+      ${members.map((member, index) => `
+        <span class="history-team-avatar ${member.isAgent ? 'agent' : 'human'}" style="--avatar-index:${index}" title="${escapeAttribute(member.name)}">
+          ${escapeHtml(member.name.slice(0, 1))}
+        </span>
+      `).join('')}
+    </span>
   `;
 }
 
@@ -1550,9 +1588,10 @@ function renderMainView() {
 
 function renderTaskWorkbench() {
   if (state.taskTab === 'todos') return renderMyTodos();
-  const visibleIssues = getVisibleIssues();
+  const sourceIssues = getVisibleIssues();
+  const visibleIssues = filterTaskIssues(sourceIssues);
   const boardContent = `
-    ${renderTaskFilterBar(visibleIssues)}
+    ${renderTaskFilterBar(sourceIssues)}
     <section class="kanban-board">${columns.map((column) => renderKanbanColumn(column, visibleIssues)).join('')}</section>
   `;
   return renderBoardWorkspace({
@@ -1564,6 +1603,7 @@ function renderTaskWorkbench() {
 function renderProjectBoardPage(project) {
   if (!project) return renderTaskWorkbench();
   const projectIssues = getProjectIssues(project);
+  const visibleProjectIssues = filterTaskIssues(projectIssues);
   const projectTodos = projectIssues.filter(isMyTodoIssue);
   const projectCollaborators = getProjectCollaborators(project);
   const collaboratorCount = projectCollaborators.filter((member) => member.name !== 'Snack').length;
@@ -1575,7 +1615,7 @@ function renderProjectBoardPage(project) {
         <button type="button" data-create-issue><i data-lucide="plus"></i><span>创建任务</span></button>
       </header>
       <section class="kanban-board project-kanban">
-        ${columns.map((column) => renderKanbanColumn(column, projectIssues)).join('')}
+        ${columns.map((column) => renderKanbanColumn(column, visibleProjectIssues)).join('')}
       </section>
     </section>
   `;
@@ -2182,7 +2222,7 @@ function renderProjectGroupChatSelectedPanel(project) {
     .filter(Boolean);
   return `
     <aside class="project-group-chat-selected">
-      <header><strong>已选对象</strong><em>${selectedMembers.length}</em></header>
+      <header><strong>已选对象 (${selectedMembers.length})</strong></header>
       <div>
         ${selectedMembers.map((member) => {
     const fixed = member.name === currentUserName || member.name === 'Snack';
@@ -3501,12 +3541,15 @@ function renderIssueWorkspaceTabs(boardLabel) {
 }
 
 function renderTaskFilterBar(visibleIssues, options = {}) {
+  const activeFilterCount = Object.values(state.taskFilters).filter(Boolean).length
+    + (state.taskFilterQuery.trim() ? 1 : 0);
   return `
     <section class="task-filter-bar">
       <div class="task-filter-left">
-        <button class="filter-button ${state.taskFilterOpen ? 'active' : ''}" data-task-filter>
+        <button class="filter-button ${state.taskFilterOpen || activeFilterCount ? 'active' : ''}" type="button" data-task-filter>
           <i data-lucide="filter"></i>
           <span>筛选</span>
+          ${activeFilterCount ? `<small>${activeFilterCount}</small>` : ''}
         </button>
         ${options.projectFilter ? `
           <span class="task-filter-chip">
@@ -3514,32 +3557,107 @@ function renderTaskFilterBar(visibleIssues, options = {}) {
             <span>项目 = ${escapeHtml(options.projectFilter)}</span>
           </span>
         ` : ''}
-        ${state.taskFilterOpen ? renderTaskFilterMenu() : ''}
+        ${state.taskFilterOpen ? renderTaskFilterMenu(visibleIssues) : ''}
       </div>
     </section>
   `;
 }
 
-function renderTaskFilterMenu() {
-  const items = [
-    ['circle-dot', '状态'],
-    ['bar-chart-3', '优先级'],
-    ['calendar-days', '日期'],
-    ['user-round', '负责人'],
-    ['user-pen', '创建者'],
-    ['folder', '项目'],
-  ];
+const taskFilterCategories = [
+  ['status', 'circle-dashed', '状态'],
+  ['priority', 'circle-alert', '优先级'],
+  ['date', 'calendar-clock', '日期'],
+  ['owner', 'user-round', '负责人'],
+  ['reporter', 'user-pen', '创建者'],
+  ['project', 'folder', '项目'],
+];
+
+function getTaskFilterOptions(sourceIssues, category) {
+  if (category === 'status') {
+    return [['', '不限'], ...columns.map(([value, label]) => [value, label])];
+  }
+  if (category === 'priority') {
+    return [['', '不限'], ...['P0', 'P1', 'P2', 'P3'].map((value) => [value, value])];
+  }
+  if (category === 'date') {
+    return [['', '不限'], ['today', '今天'], ['next7days', '未来 7 天'], ['overdue', '已逾期']];
+  }
+  if (category === 'project') {
+    const projectOptions = sourceIssues
+      .map((issue) => getProjectById(issue.projectId))
+      .filter(Boolean)
+      .filter((project, index, list) => list.findIndex((item) => item.id === project.id) === index)
+      .map((project) => [project.id, project.title]);
+    return [['', '不限'], ...projectOptions];
+  }
+  const field = category === 'reporter' ? 'reviewer' : 'owner';
+  const values = [...new Set(sourceIssues.map((issue) => issue[field]).filter(Boolean))];
+  return [['', '不限'], ...values.map((value) => [value, value])];
+}
+
+function renderTaskFilterMenu(sourceIssues) {
+  const activeCategory = taskFilterCategories.some(([value]) => value === state.taskFilterCategory)
+    ? state.taskFilterCategory
+    : 'status';
+  const selectedValue = state.taskFilters[activeCategory] || '';
+  const options = getTaskFilterOptions(sourceIssues, activeCategory);
   return `
     <section class="filter-menu" aria-label="任务筛选">
-      ${items.map(([icon, label]) => `
-        <button class="filter-menu-item" data-toast="筛选项：${label}">
-          <i data-lucide="${icon}"></i>
-          <span>${label}</span>
-          <i data-lucide="chevron-right"></i>
+      <nav class="filter-menu-categories" aria-label="筛选分类">
+        ${taskFilterCategories.map(([value, icon, label]) => `
+          <button class="filter-menu-item ${activeCategory === value ? 'active' : ''}" type="button" data-task-filter-category="${value}">
+            <i data-lucide="${icon}"></i>
+            <span>${label}</span>
+            <i data-lucide="chevron-right"></i>
+          </button>
+        `).join('')}
+      </nav>
+      <div class="filter-menu-content">
+        <label class="filter-search-field">
+          <i data-lucide="search"></i>
+          <input type="search" value="${escapeAttribute(state.taskFilterQuery)}" placeholder="搜索任务..." data-task-filter-search>
+        </label>
+        <div class="filter-option-list">
+          ${options.map(([value, label]) => `
+            <button class="filter-option-button ${selectedValue === value ? 'active' : ''}" type="button" data-task-filter-option="${activeCategory}" data-task-filter-value="${escapeAttribute(value)}">
+              <span>${escapeHtml(label)}</span>
+              ${selectedValue === value ? '<i data-lucide="check"></i>' : ''}
+            </button>
+          `).join('')}
+        </div>
+        <button class="filter-refresh-button" type="button" data-task-filter-refresh>
+          <i data-lucide="refresh-cw"></i>
+          <span>刷新</span>
         </button>
-      `).join('')}
+      </div>
     </section>
   `;
+}
+
+function filterTaskIssues(sourceIssues) {
+  const query = state.taskFilterQuery.trim().toLocaleLowerCase('zh-CN');
+  return sourceIssues.filter((issue) => {
+    const project = getProjectById(issue.projectId);
+    if (query) {
+      const searchableText = [issue.code, issue.title, issue.desc, issue.owner, issue.reviewer, project?.title]
+        .filter(Boolean)
+        .join(' ')
+        .toLocaleLowerCase('zh-CN');
+      if (!searchableText.includes(query)) return false;
+    }
+    if (state.taskFilters.status && issue.status !== state.taskFilters.status) return false;
+    if (state.taskFilters.priority && issue.priority !== state.taskFilters.priority) return false;
+    if (state.taskFilters.owner && issue.owner !== state.taskFilters.owner) return false;
+    if (state.taskFilters.reporter && issue.reviewer !== state.taskFilters.reporter) return false;
+    if (state.taskFilters.project && issue.projectId !== state.taskFilters.project) return false;
+    if (state.taskFilters.date) {
+      const dueLabel = String(issue.dueLabel || '');
+      if (state.taskFilters.date === 'today' && !dueLabel.includes('今天')) return false;
+      if (state.taskFilters.date === 'overdue' && !dueLabel.includes('逾期')) return false;
+      if (state.taskFilters.date === 'next7days' && !issue.dueDate && !dueLabel) return false;
+    }
+    return true;
+  });
 }
 
 function getVisibleIssues() {
@@ -4068,14 +4186,16 @@ function renderIssueDetail(issue, options = {}) {
             ? '<span class="issue-detail-back-spacer" aria-hidden="true"></span>'
             : '<button class="icon-button" aria-label="返回状态看板" data-issue-tab="board"><i data-lucide="arrow-left"></i></button>'}
           <div class="issue-detail-title">
-            <span>${issue.code} · ${issue.issueType}</span>
-            <h2>${issue.title}</h2>
+            <div class="issue-detail-heading-line">
+              <span class="state-pill state-${issue.status} ${hasPendingConfirmation(issue) ? 'state-confirming' : ''}">${getIssueStateLabel(issue)}</span>
+              <h2>${issue.title}</h2>
+              <span class="issue-detail-code">${issue.code}</span>
+            </div>
             <p>${issue.desc}</p>
           </div>
           <div class="issue-detail-actions" aria-label="任务操作">
-            <button class="primary-button" title="当任务有新进展或动态时，会提醒你" data-tooltip="当任务有新进展或动态时，会提醒你" data-toast="已订阅该任务进展"><i data-lucide="bell-plus"></i>订阅该任务进展</button>
             <button class="secondary-button" data-toast="已归档该任务"><i data-lucide="archive"></i>归档任务</button>
-            <span class="state-pill state-${issue.status} ${hasPendingConfirmation(issue) ? 'state-confirming' : ''}">${getIssueStateLabel(issue)}</span>
+            <button class="primary-button" title="当任务有新进展或动态时，会提醒你" data-tooltip="当任务有新进展或动态时，会提醒你" data-toast="已订阅该任务进展"><i data-lucide="bell-plus"></i>订阅任务进展</button>
           </div>
         </header>
         ${renderIssueTimeline(issue, options)}
@@ -4199,6 +4319,7 @@ function renderIssueSidePanel(issue, project) {
             ${renderProperty('审核人', issue.reviewer)}
             ${renderProperty('项目', project.title)}
             ${renderProperty('优先级', issue.priority)}
+            ${issue.schedule ? renderProperty('定时计划', issue.schedule.label) : ''}
             ${renderProperty('当前节点', issue.stage)}
             ${renderProperty('来源', issue.source)}
             ${renderPropertyRaw('关联任务', renderAssociatedTaskLinks(issue))}
@@ -6615,15 +6736,267 @@ function getIssueOwnerOptions(projectId) {
     '未分配',
     ...(project?.members || []),
     ...(project?.agents || []),
-    ...projectFolders.flatMap((item) => [...(item.members || []), ...(item.agents || [])]),
   ];
   return [...new Set(ownerNames.filter(Boolean))];
+}
+
+const issueDescriptionTemplates = [
+  {
+    key: 'goal',
+    title: '目标监控',
+    description: '跟踪业务目标、指标口径与预警阈值',
+    icon: 'target',
+    content: `【监控目标】
+- 目标名称：
+- 核心指标与统计口径：
+- 当前基线与目标值：
+- 预警阈值：
+- 检查频率：
+- 异常时的通知对象：
+- 输出要求：请给出指标变化、原因判断和建议动作。`,
+  },
+  {
+    key: 'private-domain',
+    title: '私域监控',
+    description: '监控社群、企微触达与私域转化',
+    icon: 'messages-square',
+    content: `【私域监控】
+- 监控范围：企微社群 / 私聊 / 朋友圈
+- 重点人群：
+- 关注指标：新增好友、入群率、活跃率、转化率
+- 异常规则：
+- 检查频率：
+- 输出要求：汇总异常数据、典型反馈与建议跟进名单。`,
+  },
+  {
+    key: 'ads',
+    title: '投放监控',
+    description: '追踪渠道消耗、转化与素材表现',
+    icon: 'megaphone',
+    content: `【投放监控】
+- 投放平台与账户：
+- 监控计划 / 单元：
+- 核心指标：消耗、CTR、CVR、CPA、ROI
+- 预算与预警阈值：
+- 检查频率：
+- 输出要求：标记异常计划，给出停投、加预算或素材优化建议。`,
+  },
+];
+
+const issueScheduleFrequencyOptions = [
+  { value: 'hourly', label: '每小时', icon: 'timer' },
+  { value: 'daily', label: '每天', icon: 'sun' },
+  { value: 'workdays', label: '每工作日', icon: 'briefcase-business' },
+  { value: 'weekly', label: '每周', icon: 'calendar-days' },
+  { value: 'monthly', label: '每月', icon: 'calendar-range' },
+];
+
+const issueScheduleTimeOptions = Array.from({ length: 24 }, (_, hour) => {
+  const value = `${String(hour).padStart(2, '0')}:00`;
+  return { value, label: value, icon: 'clock-3' };
+});
+
+function renderIssueDescriptionTemplates() {
+  return `
+    <section class="issue-template-deck" data-issue-template-deck aria-label="任务描述模板">
+      <div class="issue-template-heading">
+        <strong>从模板开始</strong>
+        <span>选择后自动填充任务描述</span>
+      </div>
+      <div class="issue-template-grid">
+        ${issueDescriptionTemplates.map((template) => `
+          <button class="issue-template-card" type="button" data-issue-template="${template.key}">
+            <span><i data-lucide="${template.icon}"></i></span>
+            <strong>${template.title}</strong>
+            <small>${template.description}</small>
+          </button>
+        `).join('')}
+      </div>
+    </section>
+  `;
+}
+
+function renderIssueScheduleDetails(frequency = 'daily') {
+  const timeSelect = () => renderIssueCreateSelect({
+    name: 'schedule-time',
+    label: '执行时间',
+    icon: 'clock-3',
+    value: '09:00',
+    options: issueScheduleTimeOptions,
+    compact: true,
+  });
+  if (frequency === 'hourly') {
+    return renderIssueCreateSelect({
+      name: 'schedule-hour-interval',
+      label: '执行间隔',
+      icon: 'timer',
+      value: '1',
+      options: [1, 2, 3, 4, 6, 8, 12].map((hour) => ({
+        value: String(hour),
+        label: `每 ${hour} 小时`,
+        icon: 'timer',
+      })),
+      compact: true,
+    });
+  }
+  if (frequency === 'weekly') {
+    const weekdays = [
+      ['1', '周一'], ['2', '周二'], ['3', '周三'], ['4', '周四'],
+      ['5', '周五'], ['6', '周六'], ['0', '周日'],
+    ].map(([value, label]) => ({ value, label, icon: 'calendar-days' }));
+    return `${renderIssueCreateSelect({ name: 'schedule-weekday', label: '执行日期', icon: 'calendar-days', value: '1', options: weekdays, compact: true })}${timeSelect()}`;
+  }
+  if (frequency === 'monthly') {
+    const monthDays = Array.from({ length: 31 }, (_, index) => ({
+      value: String(index + 1),
+      label: `${index + 1} 号`,
+      icon: 'calendar-range',
+    }));
+    return `${renderIssueCreateSelect({ name: 'schedule-monthday', label: '执行日期', icon: 'calendar-range', value: '1', options: monthDays, compact: true })}${timeSelect()}`;
+  }
+  return timeSelect();
+}
+
+function renderIssueCreateSelect({ name, label, icon, value, options, compact = false }) {
+  const selectedOption = options.find((option) => option.value === value) || options[0];
+  return `
+    <section class="issue-create-property ${compact ? 'compact' : ''}">
+      ${compact ? '' : `<span class="issue-create-property-label"><i data-lucide="${icon}"></i>${escapeHtml(label)}</span>`}
+      <div class="issue-create-select" data-issue-create-select data-issue-create-select-name="${escapeAttribute(name)}">
+        <input type="hidden" name="issue-${escapeAttribute(name)}" value="${escapeAttribute(selectedOption?.value || '')}" />
+        <button
+          class="issue-create-select-trigger"
+          type="button"
+          data-issue-create-select-toggle="${escapeAttribute(name)}"
+          aria-label="${escapeAttribute(label)}"
+          aria-haspopup="listbox"
+          aria-expanded="false"
+        >
+          <span>
+            ${selectedOption?.isAgent ? '<i data-lucide="bot"></i>' : ''}
+            <strong data-issue-create-selected-label>${escapeHtml(selectedOption?.label || '')}</strong>
+          </span>
+          <i data-lucide="chevron-down"></i>
+        </button>
+        <div class="issue-create-select-menu" role="listbox" aria-label="${escapeAttribute(label)}">
+          ${options.map((option) => `
+            <button
+              class="issue-create-select-option ${option.value === selectedOption?.value ? 'selected' : ''}"
+              type="button"
+              role="option"
+              aria-selected="${option.value === selectedOption?.value ? 'true' : 'false'}"
+              data-issue-create-select-option
+              data-issue-value="${escapeAttribute(option.value)}"
+              data-issue-label="${escapeAttribute(option.label)}"
+              data-issue-agent="${option.isAgent ? 'true' : 'false'}"
+            >
+              <span class="issue-create-option-icon ${option.isAgent ? 'agent' : ''}">
+                <i data-lucide="${option.icon || (option.isAgent ? 'bot' : 'check-circle-2')}"></i>
+              </span>
+              <span><strong>${escapeHtml(option.label)}</strong>${option.meta ? `<small>${escapeHtml(option.meta)}</small>` : ''}</span>
+              <i class="issue-create-option-check" data-lucide="check"></i>
+            </button>
+          `).join('')}
+        </div>
+      </div>
+      ${name === 'owner' ? '<small class="issue-create-owner-hint">可以选择专家智能体帮你完成，选择项目成员将会及时通知到对方</small>' : ''}
+    </section>
+  `;
+}
+
+function closeIssueCreateSelects() {
+  document.querySelectorAll('[data-issue-create-select].open').forEach((select) => {
+    select.classList.remove('open');
+    const trigger = select.querySelector('[data-issue-create-select-toggle]');
+    if (trigger instanceof HTMLButtonElement) trigger.setAttribute('aria-expanded', 'false');
+  });
+}
+
+function toggleIssueCreateSelect(button) {
+  const select = button.closest('[data-issue-create-select]');
+  if (!(select instanceof HTMLElement)) return;
+  const shouldOpen = !select.classList.contains('open');
+  closeIssueCreateSelects();
+  select.classList.toggle('open', shouldOpen);
+  button.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+}
+
+function selectIssueCreateOption(button) {
+  const select = button.closest('[data-issue-create-select]');
+  if (!(select instanceof HTMLElement)) return;
+  const selectName = select.dataset.issueCreateSelectName || '';
+  const selectedValue = button.dataset.issueValue || '';
+  const input = select.querySelector('input[type="hidden"]');
+  const label = select.querySelector('[data-issue-create-selected-label]');
+  const triggerCopy = select.querySelector('.issue-create-select-trigger > span');
+  if (input instanceof HTMLInputElement) input.value = selectedValue;
+  if (label instanceof HTMLElement) label.textContent = button.dataset.issueLabel || '';
+  if (triggerCopy instanceof HTMLElement) {
+    triggerCopy.classList.toggle('agent', button.dataset.issueAgent === 'true');
+  }
+  select.querySelectorAll('[data-issue-create-select-option]').forEach((option) => {
+    const selected = option === button;
+    option.classList.toggle('selected', selected);
+    option.setAttribute('aria-selected', selected ? 'true' : 'false');
+  });
+  closeIssueCreateSelects();
+  if (selectName === 'task-type') {
+    const scheduleControls = document.querySelector('[data-issue-schedule-controls]');
+    if (scheduleControls instanceof HTMLElement) scheduleControls.hidden = selectedValue !== 'scheduled';
+  }
+  if (selectName === 'schedule-frequency') {
+    const scheduleDetails = document.querySelector('[data-issue-schedule-details]');
+    const scheduleInline = document.querySelector('[data-issue-schedule-inline]');
+    if (scheduleInline instanceof HTMLElement) scheduleInline.dataset.frequency = selectedValue;
+    if (scheduleDetails instanceof HTMLElement) {
+      scheduleDetails.innerHTML = renderIssueScheduleDetails(selectedValue);
+      renderIcons();
+    }
+  }
+}
+
+function applyIssueDescriptionTemplate(templateKey) {
+  const template = issueDescriptionTemplates.find((item) => item.key === templateKey);
+  const textarea = document.querySelector('[data-issue-create-description]');
+  const templateDeck = document.querySelector('[data-issue-template-deck]');
+  if (!template || !(textarea instanceof HTMLTextAreaElement)) return;
+  textarea.value = template.content;
+  resizeIssueDescriptionTextarea(textarea);
+  if (templateDeck instanceof HTMLElement) templateDeck.hidden = true;
+  textarea.focus();
+  textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+}
+
+function resizeIssueDescriptionTextarea(textarea) {
+  if (!(textarea instanceof HTMLTextAreaElement)) return;
+  textarea.style.height = 'auto';
+  textarea.style.height = `${Math.max(180, textarea.scrollHeight)}px`;
 }
 
 function renderIssueCreationModal() {
   const projectId = getProjectById(state.issueCreationProjectId)?.id || getDefaultIssueProjectId();
   const project = getProjectById(projectId);
-  const ownerOptions = getIssueOwnerOptions(projectId);
+  const ownerOptions = getIssueOwnerOptions(projectId).map((owner) => {
+    const isAgent = owner === 'Snack' || (project?.agents || []).includes(owner) || owner.endsWith('Agent');
+    return {
+      value: owner,
+      label: owner,
+      meta: owner === '未分配' ? '暂不指定负责人' : (isAgent ? '专家智能体' : '项目成员'),
+      icon: owner === '未分配' ? 'user-round-x' : (isAgent ? 'bot' : 'user-round'),
+      isAgent,
+    };
+  });
+  const statusOptions = columns.map(([value, label]) => ({ value, label, icon: 'circle-dot' }));
+  const priorityOptions = [
+    { value: 'P0', label: 'P0 · 紧急', icon: 'chevrons-up' },
+    { value: 'P1', label: 'P1 · 高', icon: 'chevron-up' },
+    { value: 'P2', label: 'P2 · 普通', icon: 'minus' },
+    { value: 'P3', label: 'P3 · 低', icon: 'chevron-down' },
+  ];
+  const taskTypeOptions = [
+    { value: 'manual', label: '普通任务', meta: '创建后由负责人推进', icon: 'square-check-big' },
+    { value: 'scheduled', label: '定时任务', meta: '按照设定周期自动执行', icon: 'calendar-clock' },
+  ];
   return `
     <section class="issue-create-backdrop" data-issue-modal-backdrop role="presentation">
       <form class="issue-create-modal" data-issue-create-form role="dialog" aria-modal="true" aria-labelledby="issueCreateTitle">
@@ -6641,42 +7014,26 @@ function renderIssueCreationModal() {
         <section class="issue-create-body">
           <div class="issue-create-editor">
             <input class="issue-create-title-input" name="issue-title" data-issue-create-title maxlength="80" autocomplete="off" placeholder="任务标题" aria-label="任务标题" required />
-            <textarea class="issue-create-description" name="issue-description" maxlength="800" placeholder="添加描述..." aria-label="任务描述"></textarea>
+            <textarea class="issue-create-description" name="issue-description" data-issue-create-description maxlength="800" placeholder="添加描述..." aria-label="任务描述"></textarea>
+            ${renderIssueDescriptionTemplates()}
           </div>
           <section class="issue-create-properties" aria-label="任务属性">
-            <label class="issue-create-property">
-              <i data-lucide="circle-dot"></i>
-              <span>状态</span>
-              <select name="issue-status" aria-label="状态">
-                ${columns.map(([value, label]) => `<option value="${value}" ${value === 'backlog' ? 'selected' : ''}>${label}</option>`).join('')}
-              </select>
-            </label>
-            <label class="issue-create-property">
-              <i data-lucide="minus"></i>
-              <span>优先级</span>
-              <select name="issue-priority" aria-label="优先级">
-                <option value="P0">P0 · 紧急</option>
-                <option value="P1" selected>P1 · 高</option>
-                <option value="P2">P2 · 普通</option>
-                <option value="P3">P3 · 低</option>
-              </select>
-            </label>
-            <label class="issue-create-property">
-              <i data-lucide="user-round"></i>
-              <span>负责人</span>
-              <select name="issue-owner" aria-label="负责人">
-                ${ownerOptions.map((owner) => `<option value="${escapeAttribute(owner)}">${escapeHtml(owner)}</option>`).join('')}
-              </select>
-            </label>
-            <label class="issue-create-property issue-create-tag-property">
-              <i data-lucide="tag"></i>
-              <span>标签</span>
-              <input name="issue-tag" maxlength="20" autocomplete="off" placeholder="添加标签" aria-label="标签" />
-            </label>
+            ${renderIssueCreateSelect({ name: 'task-type', label: '类型', icon: 'shapes', value: 'manual', options: taskTypeOptions })}
+            <section class="issue-create-schedule-controls" data-issue-schedule-controls hidden>
+              <span class="issue-create-schedule-icon" title="定时计划"><i data-lucide="repeat-2"></i></span>
+              <div class="issue-create-schedule-inline" data-issue-schedule-inline data-frequency="daily">
+                ${renderIssueCreateSelect({ name: 'schedule-frequency', label: '定时计划', icon: 'repeat-2', value: 'daily', options: issueScheduleFrequencyOptions, compact: true })}
+                <div class="issue-create-schedule-details" data-issue-schedule-details>
+                  ${renderIssueScheduleDetails('daily')}
+                </div>
+              </div>
+            </section>
+            ${renderIssueCreateSelect({ name: 'status', label: '状态', icon: 'circle-dot', value: 'backlog', options: statusOptions })}
+            ${renderIssueCreateSelect({ name: 'priority', label: '优先级', icon: 'signal-high', value: 'P1', options: priorityOptions })}
+            ${renderIssueCreateSelect({ name: 'owner', label: '负责人', icon: 'user-round', value: currentUserName, options: ownerOptions })}
           </section>
         </section>
         <footer class="issue-create-footer">
-          <span class="issue-create-manual-hint"><i data-lucide="pencil-line"></i>当前仅支持手动创建</span>
           <div>
             <button class="secondary-button" type="button" data-issue-modal-close>取消</button>
             <button class="primary-button" type="submit">创建任务</button>
@@ -6694,6 +7051,29 @@ function getNextManualIssueCode() {
     state.issueSerial += 1;
   } while (getIssueByCode(code));
   return code;
+}
+
+function getManualIssueSchedule(formData) {
+  if (String(formData.get('issue-task-type') || '') !== 'scheduled') return null;
+  const allowedFrequencies = issueScheduleFrequencyOptions.map((option) => option.value);
+  const frequencyValue = String(formData.get('issue-schedule-frequency') || 'daily');
+  const frequency = allowedFrequencies.includes(frequencyValue) ? frequencyValue : 'daily';
+  const time = String(formData.get('issue-schedule-time') || '09:00');
+  if (frequency === 'hourly') {
+    const hourInterval = Number(formData.get('issue-schedule-hour-interval')) || 1;
+    return { frequency, hourInterval, label: `每 ${hourInterval} 小时执行` };
+  }
+  if (frequency === 'weekly') {
+    const weekday = String(formData.get('issue-schedule-weekday') || '1');
+    const weekdayLabel = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][Number(weekday)] || '周一';
+    return { frequency, weekday, time, label: `每周${weekdayLabel.slice(1)} ${time}` };
+  }
+  if (frequency === 'monthly') {
+    const monthDay = Number(formData.get('issue-schedule-monthday')) || 1;
+    return { frequency, monthDay, time, label: `每月 ${monthDay} 号 ${time}` };
+  }
+  if (frequency === 'workdays') return { frequency, time, label: `每工作日 ${time}` };
+  return { frequency, time, label: `每天 ${time}` };
 }
 
 function createManualIssue(form) {
@@ -6719,7 +7099,7 @@ function createManualIssue(form) {
     ? String(formData.get('issue-priority'))
     : 'P1';
   const owner = String(formData.get('issue-owner') || currentUserName);
-  const rawTag = String(formData.get('issue-tag') || '').trim();
+  const schedule = getManualIssueSchedule(formData);
   const stageByStatus = {
     backlog: '待开始',
     in_progress: '任务执行',
@@ -6734,17 +7114,19 @@ function createManualIssue(form) {
     title: escapeAttribute(rawTitle),
     projectId: project.id,
     status,
-    issueType: '工作任务',
+    issueType: schedule ? '定时任务' : '普通任务',
+    triggerType: schedule ? 'cron' : 'manual',
+    schedule,
     owner,
     reviewer: currentUserName,
     priority,
     stage,
-    tag: rawTag ? escapeAttribute(rawTag) : '手动创建',
+    tag: schedule?.label || '手动创建',
     desc: rawDescription ? escapeAttribute(rawDescription) : '暂无任务描述。',
     count: status === 'done' ? '1/1' : '0/1',
     predecessor: null,
     relatedTasks: [],
-    source: '任务工作台 / 手动创建',
+    source: schedule ? `项目看板 / 定时任务 / ${schedule.label}` : '项目看板 / 手动创建',
     nodes: [{
       title: stage,
       state: status === 'done' ? 'done' : 'active',
@@ -6752,16 +7134,20 @@ function createManualIssue(form) {
     }],
     evidence: [],
     artifacts: [],
-    activity: [[currentUserName, '手动创建了任务。', '刚刚']],
+    activity: [[currentUserName, schedule ? `创建了定时任务，${schedule.label}。` : '手动创建了任务。', '刚刚']],
     comments: [],
-    logs: [`${currentUserName} 手动创建任务`],
+    logs: [`${currentUserName} ${schedule ? `创建定时任务（${schedule.label}）` : '手动创建任务'}`],
   };
   issues.push(issue);
   if (!project.taskCodes.includes(code)) project.taskCodes.push(code);
   state.issueCreationOpen = false;
   state.issueCreationProjectId = null;
-  showToast(`${code} 已创建`);
-  openIssue(code);
+  state.activeProject = project.id;
+  state.activeIssue = null;
+  state.activeIssueTab = null;
+  state.projectBoardTab = 'tasks';
+  render();
+  showToast('创建成功');
 }
 
 function renderProjectCreationModal() {
@@ -8532,7 +8918,7 @@ function createGroupChat(projectId, participants = null) {
       createdAt: '2026年8月4日',
       participants: [...new Set([currentUserName, 'Snack', ...participants])],
     };
-    project.groups = [...groups, group];
+    project.groups = [group, ...groups];
     project.activeGroupId = group.id;
     state.projectGroupPage = Math.ceil(project.groups.length / projectGroupPageSize);
   }
@@ -8658,6 +9044,32 @@ function setMemberPanelTab(tab) {
 function toggleTaskFilter() {
   state.taskFilterOpen = !state.taskFilterOpen;
   render();
+}
+
+function setTaskFilterCategory(category) {
+  if (!taskFilterCategories.some(([value]) => value === category)) return;
+  state.taskFilterCategory = category;
+  render();
+}
+
+function setTaskFilterOption(category, value) {
+  if (!Object.prototype.hasOwnProperty.call(state.taskFilters, category)) return;
+  state.taskFilters = { ...state.taskFilters, [category]: value };
+  render();
+}
+
+function refreshTaskFilter() {
+  render();
+  showToast('已刷新');
+}
+
+function focusTaskFilterSearch() {
+  window.requestAnimationFrame(() => {
+    const input = document.querySelector('[data-task-filter-search]');
+    if (!(input instanceof HTMLInputElement)) return;
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+  });
 }
 
 function setResourceTab(tab) {
@@ -9483,6 +9895,24 @@ function renderIcons() {
 
 function handleBodyClick(event) {
   if (!(event.target instanceof Element)) return;
+  const issueTemplateTarget = event.target.closest('[data-issue-template]');
+  if (issueTemplateTarget) {
+    applyIssueDescriptionTemplate(issueTemplateTarget.dataset.issueTemplate || '');
+    return;
+  }
+  const taskFilterTarget = event.target.closest('[data-task-filter-category], [data-task-filter-option], [data-task-filter-refresh]');
+  if (taskFilterTarget) {
+    if (taskFilterTarget.dataset.taskFilterCategory) {
+      setTaskFilterCategory(taskFilterTarget.dataset.taskFilterCategory);
+      return;
+    }
+    if (taskFilterTarget.dataset.taskFilterOption !== undefined) {
+      setTaskFilterOption(taskFilterTarget.dataset.taskFilterOption, taskFilterTarget.dataset.taskFilterValue || '');
+      return;
+    }
+    refreshTaskFilter();
+    return;
+  }
   if (suppressConversationClick) {
     event.preventDefault();
     event.stopPropagation();
@@ -9521,7 +9951,9 @@ function handleBodyClick(event) {
   const clickedInsideProjectKnowledgeAttachPicker = event.target.closest('[data-project-knowledge-attach-picker]');
   const shouldCloseProjectKnowledgeAttachPicker = Boolean(state.projectKnowledgeAttachProjectId) && !clickedInsideProjectKnowledgeAttachPicker;
   if (shouldCloseProjectKnowledgeAttachPicker) state.projectKnowledgeAttachProjectId = null;
-  const target = event.target.closest('[data-view], [data-create-project], [data-project-config], [data-project-detail-sidebar], [data-project-detail-tab], [data-project-modal-close], [data-project-modal-backdrop], [data-project-group-chat-open], [data-project-group-chat-close], [data-project-group-chat-backdrop], [data-project-group-chat-filter], [data-project-group-chat-option], [data-project-group-chat-complete], [data-project-group-enter], [data-project-group-action], [data-project-group-page], [data-project-group-modal-close], [data-project-group-modal-backdrop], [data-project-group-modal-action], [data-project-collaborator-manager], [data-project-collaborator-add], [data-project-collaborator-option], [data-create-issue], [data-issue-modal-close], [data-issue-modal-backdrop], [data-local-knowledge-backdrop], [data-close-local-knowledge], [data-open-local-knowledge], [data-open-local-folder], [data-submit-local-knowledge], [data-project-asset-action], [data-project-asset-share-backdrop], [data-project-asset-share-close], [data-project-asset-share-save], [data-project-knowledge-picker-toggle], [data-project-knowledge-topic], [data-project-wiki-topic-create], [data-project-folder-remove], [data-project-wiki-topic-toggle], [data-project-wiki-topic-option], [data-project-knowledge-add], [data-project-members-add], [data-project-member-picker], [data-project-member-add], [data-project-member-search], [data-project-member-option], [data-project-member-remove], [data-snack-desktop-download], [data-monitoring-rule-recognize], [data-monitoring-rule-edit], [data-monitoring-rule-remove], [data-project-intake-submit], [data-meeting-intake-submit], [data-mock-action], [data-confirmation-action], [data-confirmation-cancel], [data-model-menu], [data-model-select], [data-project-picker], [data-project-context], [data-project-context-empty], [data-project-picker-search], [data-agent-status-toggle], [data-task-tab], [data-task-filter], [data-project-board-tab], [data-issue-tab], [data-close-issue-tab], [data-todo-inbox-issue], [data-issue-id], [data-log-doc], [data-close-log-doc], [data-project-open], [data-project-toggle], [data-project-sessions], [data-project-session], [data-project-menu], [data-project-action], [data-project-create-menu], [data-project-create-action], [data-loose-session], [data-board-sidebar], [data-member-sidebar], [data-member-tab], [data-member-manager-toggle], [data-member-manager-add], [data-member-manager-remove], [data-agent-tab], [data-agent-chat], [data-agent-menu], [data-agent-select], [data-resource-tab], [data-toast]');
+  const clickedInsideIssueCreateSelect = event.target.closest('[data-issue-create-select]');
+  if (!clickedInsideIssueCreateSelect) closeIssueCreateSelects();
+  const target = event.target.closest('[data-view], [data-create-project], [data-project-config], [data-project-detail-sidebar], [data-project-detail-tab], [data-project-modal-close], [data-project-modal-backdrop], [data-project-group-chat-open], [data-project-group-chat-close], [data-project-group-chat-backdrop], [data-project-group-chat-filter], [data-project-group-chat-option], [data-project-group-chat-complete], [data-project-group-enter], [data-project-group-action], [data-project-group-page], [data-project-group-modal-close], [data-project-group-modal-backdrop], [data-project-group-modal-action], [data-project-collaborator-manager], [data-project-collaborator-add], [data-project-collaborator-option], [data-create-issue], [data-issue-create-select-toggle], [data-issue-create-select-option], [data-issue-modal-close], [data-issue-modal-backdrop], [data-local-knowledge-backdrop], [data-close-local-knowledge], [data-open-local-knowledge], [data-open-local-folder], [data-submit-local-knowledge], [data-project-asset-action], [data-project-asset-share-backdrop], [data-project-asset-share-close], [data-project-asset-share-save], [data-project-knowledge-picker-toggle], [data-project-knowledge-topic], [data-project-wiki-topic-create], [data-project-folder-remove], [data-project-wiki-topic-toggle], [data-project-wiki-topic-option], [data-project-knowledge-add], [data-project-members-add], [data-project-member-picker], [data-project-member-add], [data-project-member-search], [data-project-member-option], [data-project-member-remove], [data-snack-desktop-download], [data-monitoring-rule-recognize], [data-monitoring-rule-edit], [data-monitoring-rule-remove], [data-project-intake-submit], [data-meeting-intake-submit], [data-mock-action], [data-confirmation-action], [data-confirmation-cancel], [data-model-menu], [data-model-select], [data-project-picker], [data-project-context], [data-project-context-empty], [data-project-picker-search], [data-agent-status-toggle], [data-task-tab], [data-task-filter], [data-project-board-tab], [data-issue-tab], [data-close-issue-tab], [data-todo-inbox-issue], [data-issue-id], [data-log-doc], [data-close-log-doc], [data-project-open], [data-project-toggle], [data-project-sessions], [data-project-session], [data-project-menu], [data-project-action], [data-project-create-menu], [data-project-create-action], [data-loose-session], [data-board-sidebar], [data-member-sidebar], [data-member-tab], [data-member-manager-toggle], [data-member-manager-add], [data-member-manager-remove], [data-agent-tab], [data-agent-chat], [data-agent-menu], [data-agent-select], [data-resource-tab], [data-toast]');
   if (!target) {
     if (shouldCloseProjectKnowledgeAttachPicker || state.openProjectMenuId || state.openProjectCreateMenuId || state.modelPickerOpen || state.projectPickerOpen) {
       state.openProjectMenuId = null;
@@ -9568,6 +10000,8 @@ function handleBodyClick(event) {
     if (event.target === target) closeIssueCreationModal();
     return;
   }
+  if (target.dataset.issueCreateSelectToggle !== undefined) return toggleIssueCreateSelect(target);
+  if (target.dataset.issueCreateSelectOption !== undefined) return selectIssueCreateOption(target);
   if (target.dataset.projectGroupModalClose !== undefined) return closeProjectGroupActionModal();
   if (target.dataset.projectGroupModalBackdrop !== undefined) {
     if (event.target === target) closeProjectGroupActionModal();
@@ -9746,6 +10180,18 @@ document.body.addEventListener('submit', (event) => {
   }
 });
 document.body.addEventListener('input', (event) => {
+  if (event.target instanceof HTMLTextAreaElement && event.target.dataset.issueCreateDescription !== undefined) {
+    const templateDeck = event.target.closest('.issue-create-editor')?.querySelector('[data-issue-template-deck]');
+    resizeIssueDescriptionTextarea(event.target);
+    if (templateDeck instanceof HTMLElement) templateDeck.hidden = Boolean(event.target.value.trim());
+    return;
+  }
+  if (event.target instanceof HTMLInputElement && event.target.dataset.taskFilterSearch !== undefined) {
+    state.taskFilterQuery = event.target.value;
+    render();
+    focusTaskFilterSearch();
+    return;
+  }
   if (event.target instanceof HTMLInputElement && event.target.dataset.projectGroupChatSearch !== undefined) {
     state.projectGroupChatQuery = event.target.value;
     refreshProjectGroupChatDirectory();
@@ -9943,6 +10389,11 @@ document.body.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && state.projectWikiTopicPickerOpen) {
     event.preventDefault();
     closeProjectWikiTopicPicker();
+    return;
+  }
+  if (event.key === 'Escape' && document.querySelector('[data-issue-create-select].open')) {
+    event.preventDefault();
+    closeIssueCreateSelects();
     return;
   }
   if (event.key === 'Escape' && state.projectKnowledgeAttachProjectId) {
