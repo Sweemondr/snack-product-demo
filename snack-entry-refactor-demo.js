@@ -1667,7 +1667,7 @@ function renderProjectCollaboratorsPage(project) {
           <header class="project-collaboration-card-header">
             <span>
               <i data-lucide="messages-square"></i>
-              <span><strong>群聊</strong></span>
+              <span><strong>项目群聊</strong></span>
             </span>
             <button class="project-card-primary-action" type="button" data-project-group-chat-open="${escapeAttribute(project.id)}">
               <i data-lucide="plus"></i><span>发起群聊</span>
@@ -1705,7 +1705,7 @@ function renderProjectGroupList(project, groups) {
     <div class="project-group-list-shell">
       <div class="project-group-list" role="table" aria-label="项目群聊列表">
         <div class="project-group-list-heading" role="row">
-          <span>群聊</span><span>创建时间</span><span>成员</span><span>操作</span>
+          <span>项目群聊</span><span>成员</span><span>操作</span>
         </div>
         ${visibleGroups.map((group) => {
     const participants = (group.participants || [])
@@ -1716,7 +1716,6 @@ function renderProjectGroupList(project, groups) {
               <span class="project-group-icon"><i data-lucide="messages-square"></i></span>
               <span><strong>${escapeHtml(group.name)}</strong></span>
             </span>
-            <time>${escapeHtml(group.createdAt || '刚刚')}</time>
             <span class="project-group-participants" aria-label="${participants.length} 位群成员">
               <span class="member-avatar-stack">
                 ${participants.slice(0, 4).map((member, index) => `

@@ -2789,7 +2789,7 @@ body.conversation-dragging {
 .project-group-list-heading,
 .project-group-list-row {
   display: grid;
-  grid-template-columns: minmax(150px, 1fr) 104px 76px minmax(248px, auto);
+  grid-template-columns: minmax(170px, 1fr) 90px minmax(248px, auto);
   align-items: center;
   gap: 16px;
 }
@@ -3210,7 +3210,7 @@ body.conversation-dragging {
     display: grid;
   }
   .project-group-list-row {
-    grid-template-columns: minmax(170px, 1fr) 104px 76px minmax(248px, auto);
+    grid-template-columns: minmax(190px, 1fr) 90px minmax(248px, auto);
   }
 }
 @media (max-width: 760px) {
@@ -3224,7 +3224,6 @@ body.conversation-dragging {
     grid-template-columns: 1fr;
   }
   .project-group-list-heading,
-  .project-group-list-row > time,
   .project-group-participants {
     display: none;
   }
@@ -3747,7 +3746,8 @@ body.conversation-dragging {
   background: #ffedd5;
 }
 .member-stack-avatar.agent {
-  background: #0f766e;
+  color: var(--brand);
+  background: #fff;
 }
 .group-members-button:hover .member-stack-avatar,
 .group-members-button.active .member-stack-avatar {
@@ -4636,7 +4636,9 @@ body.conversation-dragging {
   background: #ffedd5;
 }
 .group-member-avatar.agent {
-  background: #0f766e;
+  border: 1px solid #fed7aa;
+  color: var(--brand);
+  background: #fff;
 }
 .group-member-main {
   display: grid;
