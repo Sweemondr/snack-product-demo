@@ -117,6 +117,10 @@ const state = {
   projectGroupChatQuery: '',
   projectGroupChatFilter: 'all',
   projectGroupChatSelection: [],
+  projectGroupChatEditingGroupId: null,
+  projectCollaboratorManagerType: null,
+  projectCollaboratorPickerType: null,
+  projectCollaboratorQuery: '',
   issueCreationOpen: false,
   issueCreationProjectId: null,
   issueSerial: 1,
@@ -172,6 +176,14 @@ const state = {
 };
 
 const currentUserName = '田晓柔';
+const projectUserDirectory = [
+  { name: '陈雅莉', role: '产品经理' },
+  { name: '蒋双奔', role: '研发工程师' },
+  { name: '章泽森', role: '体验设计师' },
+  { name: '何嘉', role: '项目负责人' },
+  { name: '陆铭', role: '内容运营' },
+  { name: '林可', role: '数据分析师' },
+];
 
 const projectWikiTopicOptions = [
   {
@@ -267,6 +279,21 @@ const agents = [
     desc: '承接 PRD、HTML 原型、技术方案、代码实现、测试和上线验收。',
     last: '适合研发工作流',
   },
+  {
+    name: '用户研究 Agent',
+    desc: '汇总访谈、反馈与使用数据，提炼用户洞察和需求机会。',
+    last: '适合用户研究与需求分析',
+  },
+  {
+    name: '数据分析 Agent',
+    desc: '分析产品与运营指标，定位波动原因并生成可复用的数据结论。',
+    last: '适合指标分析与实验复盘',
+  },
+  {
+    name: '会议纪要 Agent',
+    desc: '整理会议转写、决策和行动项，持续追踪会后任务。',
+    last: '适合会议协作与行动跟进',
+  },
 ];
 
 const modelOptions = [
@@ -361,6 +388,15 @@ const projectFolders = [
     taskCodes: [],
     sessions: [],
     groupMessages: [],
+    activeGroupId: 'snack-product-core-group',
+    groups: [
+      {
+        id: 'snack-product-core-group',
+        name: 'Snack 产品迭代群',
+        createdAt: '2026年7月24日',
+        participants: ['田晓柔', 'Snack', '前端工程师-小贝', 'QA-小林', '产品设计 Agent'],
+      },
+    ],
   },
 ];
 
@@ -1537,10 +1573,10 @@ function renderProjectBoardPage(project) {
             <span>待办</span><em>${projectTodos.length}</em>
           </button>
           <button class="${state.projectBoardTab === 'collaborators' ? 'active' : ''}" type="button" data-project-board-tab="collaborators">
-            <span>项目成员</span><em>${collaboratorCount}</em>
+            <span>成员</span><em>${collaboratorCount}</em>
           </button>
           <button class="${state.projectBoardTab === 'knowledge' ? 'active' : ''}" type="button" data-project-board-tab="knowledge">
-            <span>关联知识</span><em>${knowledgeCount}</em>
+            <span>资产</span><em>${knowledgeCount}</em>
           </button>
         </nav>
       </section>
@@ -1598,36 +1634,153 @@ function renderProjectCollaboratorsPage(project) {
   const collaborators = getProjectCollaborators(project);
   const projectMembers = collaborators.filter((member) => !member.isAgent);
   const expertAgents = collaborators.filter((member) => member.isAgent && member.name !== 'Snack');
+  const groups = getProjectGroups(project);
   return `
     <section class="project-info-tab-page project-collaborators-page">
-      <header class="project-info-tab-header">
-        <div>
-          <h2>项目成员</h2>
-          <p>查看参与项目的成员与专家智能体，或快速选择对象发起群聊。</p>
-        </div>
-        <button class="project-info-chat-entry" type="button" data-project-group-chat-open="${escapeAttribute(project.id)}">
-          <i data-lucide="messages-square"></i>
-          <span>发起群聊</span>
-        </button>
-      </header>
-      <section class="project-collaborator-tab-card">
-        <section>
-          <header><span><i data-lucide="users-round"></i><strong>项目成员</strong></span><em>${projectMembers.length}</em></header>
-          <div class="project-detail-member-list">
-            ${projectMembers.map((member) => renderProjectDetailMemberRow(member, { readOnly: true })).join('')}
-          </div>
-        </section>
-        <section>
-          <header><span><i data-lucide="bot"></i><strong>专家智能体</strong></span><em>${expertAgents.length}</em></header>
-          <div class="project-detail-member-list">
-            ${expertAgents.length
-    ? expertAgents.map((member) => renderProjectDetailMemberRow(member, { readOnly: true })).join('')
-    : '<p class="project-detail-empty">尚未添加专家智能体</p>'}
-          </div>
-        </section>
+      <section class="project-collaboration-card-list">
+        <article class="project-collaboration-card project-groups-card">
+          <header class="project-collaboration-card-header">
+            <span>
+              <i data-lucide="messages-square"></i>
+              <span><strong>群聊</strong></span>
+            </span>
+            <button class="project-card-primary-action" type="button" data-project-group-chat-open="${escapeAttribute(project.id)}">
+              <i data-lucide="plus"></i><span>发起群聊</span>
+            </button>
+          </header>
+          ${renderProjectGroupList(project, groups)}
+        </article>
+        <article class="project-collaboration-card project-people-combined-card">
+          ${renderProjectCollaboratorSection(project, 'human', projectMembers)}
+          ${renderProjectCollaboratorSection(project, 'agent', expertAgents)}
+        </article>
       </section>
     </section>
   `;
+}
+
+function getProjectGroups(project) {
+  return Array.isArray(project.groups) ? project.groups : [];
+}
+
+function renderProjectGroupList(project, groups) {
+  if (!groups.length) {
+    return `
+      <div class="project-group-list-empty">
+        <span><i data-lucide="message-circle-more"></i></span>
+        <div><strong>还没有项目群聊</strong><small>发起群聊后，Snack 会默认加入并带上项目上下文。</small></div>
+      </div>
+    `;
+  }
+  return `
+    <div class="project-group-list" role="table" aria-label="项目群聊列表">
+      <div class="project-group-list-heading" role="row">
+        <span>群聊</span><span>创建时间</span><span>成员</span><span>操作</span>
+      </div>
+      ${groups.map((group) => {
+    const participants = (group.participants || [])
+      .map((name) => getProjectGroupChatDirectory(project).find((member) => member.name === name) || { name, isAgent: false });
+    return `
+          <article class="project-group-list-row" role="row">
+            <span class="project-group-identity">
+              <span class="project-group-icon"><i data-lucide="messages-square"></i></span>
+              <span><strong>${escapeHtml(group.name)}</strong></span>
+            </span>
+            <time>${escapeHtml(group.createdAt || '刚刚')}</time>
+            <span class="project-group-participants" aria-label="${participants.length} 位群成员">
+              <span class="member-avatar-stack">
+                ${participants.slice(0, 4).map((member, index) => `
+                  <span class="member-stack-avatar ${member.isAgent ? 'agent' : 'human'}" style="--stack-index:${index}" title="${escapeAttribute(member.name)}">${escapeHtml(member.name.slice(0, 1))}</span>
+                `).join('')}
+              </span>
+            </span>
+            <span class="project-group-row-actions">
+              <button type="button" data-project-group-action="members" data-project-group-id="${escapeAttribute(group.id)}"><i data-lucide="users-round"></i><span>人员管理</span></button>
+              <button type="button" data-project-group-action="rename" data-project-group-id="${escapeAttribute(group.id)}"><i data-lucide="pencil-line"></i><span>修改名称</span></button>
+              <button type="button" data-project-group-action="share" data-project-group-id="${escapeAttribute(group.id)}"><i data-lucide="share-2"></i><span>分享</span></button>
+              <button class="danger" type="button" data-project-group-action="dissolve" data-project-group-id="${escapeAttribute(group.id)}"><i data-lucide="trash-2"></i><span>解散</span></button>
+            </span>
+          </article>
+        `;
+  }).join('')}
+    </div>
+  `;
+}
+
+function renderProjectCollaboratorSection(project, type, members) {
+  const isAgent = type === 'agent';
+  const managing = state.projectCollaboratorManagerType === type;
+  const pickerOpen = state.projectCollaboratorPickerType === type;
+  const candidates = getProjectCollaboratorCandidates(project, type);
+  const title = isAgent ? '专家智能体' : '项目成员';
+  return `
+    <section class="project-people-section ${managing ? 'managing' : ''}">
+      <header class="project-people-section-header">
+        <span>
+          <i data-lucide="${isAgent ? 'bot' : 'users-round'}"></i>
+          <strong>${title}</strong>
+          <em>${members.length}</em>
+        </span>
+        <button class="project-card-manage-action ${managing ? 'active' : ''}" type="button" data-project-collaborator-manager="${type}">
+          <i data-lucide="${managing ? 'check' : 'settings-2'}"></i><span>${managing ? '完成' : '管理'}</span>
+        </button>
+      </header>
+      <div class="project-card-member-list">
+        ${members.length
+    ? members.map((member) => renderProjectCollaboratorNameRow(member, managing)).join('')
+    : `<p class="project-card-member-empty">尚未添加${title}</p>`}
+      </div>
+      ${managing ? `
+        <footer class="project-collaborator-manager">
+          <button class="project-collaborator-add" type="button" data-project-collaborator-add="${type}">
+            <i data-lucide="plus"></i><span>添加${isAgent ? '智能体' : '成员'}</span><i data-lucide="chevron-${pickerOpen ? 'up' : 'down'}"></i>
+          </button>
+          ${pickerOpen ? `
+            <section class="project-collaborator-picker">
+              <label>
+                <i data-lucide="search"></i>
+                <input type="search" value="${escapeAttribute(state.projectCollaboratorQuery)}" data-project-collaborator-search placeholder="搜索${isAgent ? '具体的 Agent' : '具体的用户'}" autocomplete="off" />
+              </label>
+              <div>
+                ${candidates.length ? candidates.map((member) => `
+                  <button type="button" data-project-collaborator-option="${escapeAttribute(member.name)}">
+                    <span class="group-member-avatar ${member.isAgent ? 'agent' : 'human'}">${escapeHtml(member.name.slice(0, 1))}</span>
+                    <span><strong>${escapeHtml(member.name)}</strong><small>${escapeHtml(member.role)}</small></span>
+                    <em>${member.isAgent ? 'Agent' : '用户'}</em>
+                    <i data-lucide="plus"></i>
+                  </button>
+                `).join('') : `<p>${state.projectCollaboratorQuery.trim() ? '没有匹配结果' : `暂无可添加的${title}`}</p>`}
+              </div>
+            </section>
+          ` : ''}
+        </footer>
+      ` : ''}
+    </section>
+  `;
+}
+
+function renderProjectCollaboratorNameRow(member, managing) {
+  const canRemove = managing && member.name !== currentUserName && member.name !== 'Snack';
+  return `
+    <article class="project-collaborator-name-row">
+      <span class="group-member-avatar ${member.isAgent ? 'agent' : 'human'}">${escapeHtml(member.name.slice(0, 1))}</span>
+      <strong>${escapeHtml(member.name)}</strong>
+      ${canRemove ? `
+        <button type="button" data-member-manager-remove="${escapeAttribute(member.name)}" aria-label="移除 ${escapeAttribute(member.name)}">
+          <i data-lucide="x"></i>
+        </button>
+      ` : ''}
+    </article>
+  `;
+}
+
+function getProjectCollaboratorCandidates(project, type) {
+  const existingNames = new Set(getProjectCollaborators(project).map((member) => member.name));
+  const query = state.projectCollaboratorQuery.trim().toLowerCase();
+  return getProjectMemberDirectory()
+    .filter((member) => member.isAgent === (type === 'agent'))
+    .filter((member) => !existingNames.has(member.name))
+    .filter((member) => !query || `${member.name} ${member.role}`.toLowerCase().includes(query));
 }
 
 function renderProjectKnowledgePage(project) {
@@ -1640,7 +1793,7 @@ function renderProjectKnowledgePage(project) {
     <section class="project-info-tab-page project-knowledge-page">
       <header class="project-info-tab-header">
         <div>
-          <h2>关联知识</h2>
+          <h2>资产</h2>
           <p>集中查看项目已连接的语雀空间、LLM Wiki 和本地文件夹。</p>
         </div>
         <button class="project-info-config-entry" type="button" data-project-config="${escapeAttribute(project.id)}">
@@ -1785,6 +1938,8 @@ function getProjectGroupChatDirectory(project) {
 function renderProjectGroupChatModal() {
   const project = getProjectById(state.projectGroupChatProjectId);
   if (!project) return '';
+  const editingGroup = getProjectGroups(project)
+    .find((group) => group.id === state.projectGroupChatEditingGroupId);
   const directory = getProjectGroupChatDirectory(project);
   const directoryByName = new Map(directory.map((member) => [member.name, member]));
   const selectedNames = new Set(state.projectGroupChatSelection);
@@ -1804,8 +1959,8 @@ function renderProjectGroupChatModal() {
       <section class="project-group-chat-modal" role="dialog" aria-modal="true" aria-labelledby="projectGroupChatTitle">
         <header>
           <div>
-            <h2 id="projectGroupChatTitle">发起群聊</h2>
-            <p>选择项目成员和专家智能体，完成后快速进入群聊</p>
+            <h2 id="projectGroupChatTitle">${editingGroup ? '管理群成员' : '发起群聊'}</h2>
+            <p>${editingGroup ? `调整「${escapeHtml(editingGroup.name)}」的成员与专家智能体` : '选择项目成员和专家智能体，Snack 会默认加入群聊'}</p>
           </div>
           <button type="button" data-project-group-chat-close aria-label="关闭发起群聊"><i data-lucide="x"></i></button>
         </header>
@@ -1852,7 +2007,7 @@ function renderProjectGroupChatModal() {
             </div>
             <footer>
               <button class="secondary-button" type="button" data-project-group-chat-close>取消</button>
-              <button class="primary-button" type="button" data-project-group-chat-complete>完成</button>
+              <button class="primary-button" type="button" data-project-group-chat-complete>${editingGroup ? '保存' : '完成'}</button>
             </footer>
           </aside>
         </div>
@@ -1861,13 +2016,18 @@ function renderProjectGroupChatModal() {
   `;
 }
 
-function openProjectGroupChat(projectId) {
+function openProjectGroupChat(projectId, groupId = null) {
   if (!getProjectById(projectId)) return;
+  const project = getProjectById(projectId);
+  const editingGroup = getProjectGroups(project).find((group) => group.id === groupId);
   state.projectGroupChatOpen = true;
   state.projectGroupChatProjectId = projectId;
   state.projectGroupChatQuery = '';
   state.projectGroupChatFilter = 'all';
-  state.projectGroupChatSelection = [currentUserName, 'Snack'];
+  state.projectGroupChatEditingGroupId = editingGroup?.id || null;
+  state.projectGroupChatSelection = editingGroup
+    ? [...new Set([currentUserName, 'Snack', ...(editingGroup.participants || [])])]
+    : [currentUserName, 'Snack'];
   render();
   syncProjectGroupChatSearchFocus();
 }
@@ -1878,6 +2038,7 @@ function closeProjectGroupChat() {
   state.projectGroupChatQuery = '';
   state.projectGroupChatFilter = 'all';
   state.projectGroupChatSelection = [];
+  state.projectGroupChatEditingGroupId = null;
   render();
 }
 
@@ -1901,13 +2062,108 @@ function syncProjectGroupChatSearchFocus() {
 
 function completeProjectGroupChat() {
   const projectId = state.projectGroupChatProjectId;
+  const project = getProjectById(projectId);
   const participants = [...state.projectGroupChatSelection];
+  const editingGroup = getProjectGroups(project || {})
+    .find((group) => group.id === state.projectGroupChatEditingGroupId);
   state.projectGroupChatOpen = false;
   state.projectGroupChatProjectId = null;
   state.projectGroupChatQuery = '';
   state.projectGroupChatFilter = 'all';
   state.projectGroupChatSelection = [];
+  state.projectGroupChatEditingGroupId = null;
+  if (editingGroup) {
+    editingGroup.participants = [...new Set(participants)];
+    editingGroup.updatedAt = '刚刚';
+    render();
+    showToast('群成员已更新');
+    return;
+  }
   createGroupChat(projectId, participants);
+}
+
+function runProjectGroupAction(action, groupId) {
+  const project = getActiveProject();
+  const group = getProjectGroups(project || {}).find((item) => item.id === groupId);
+  if (!project || !group) return;
+  if (action === 'members') {
+    openProjectGroupChat(project.id, group.id);
+    return;
+  }
+  if (action === 'rename') {
+    const nextName = window.prompt('修改群聊名称', group.name);
+    if (nextName === null) return;
+    const normalizedName = nextName.trim();
+    if (!normalizedName) {
+      showToast('群聊名称不能为空');
+      return;
+    }
+    group.name = normalizedName;
+    render();
+    showToast('群聊名称已更新');
+    return;
+  }
+  if (action === 'share') {
+    const shareUrl = `${window.location.origin}${window.location.pathname}#project-${project.id}-group-${group.id}`;
+    if (navigator.clipboard?.writeText) navigator.clipboard.writeText(shareUrl).catch(() => {});
+    showToast('群聊分享链接已复制');
+    return;
+  }
+  if (action === 'dissolve') {
+    if (!window.confirm(`确认解散「${group.name}」？此操作仅影响当前 Demo。`)) return;
+    project.groups = getProjectGroups(project).filter((item) => item.id !== group.id);
+    if (project.activeGroupId === group.id) project.activeGroupId = project.groups[0]?.id || null;
+    render();
+    showToast('群聊已解散');
+  }
+}
+
+function toggleProjectCollaboratorManager(type) {
+  const normalizedType = type === 'agent' ? 'agent' : 'human';
+  const closing = state.projectCollaboratorManagerType === normalizedType;
+  state.projectCollaboratorManagerType = closing ? null : normalizedType;
+  state.projectCollaboratorPickerType = null;
+  state.projectCollaboratorQuery = '';
+  render();
+}
+
+function toggleProjectCollaboratorPicker(type) {
+  const normalizedType = type === 'agent' ? 'agent' : 'human';
+  state.projectCollaboratorManagerType = normalizedType;
+  state.projectCollaboratorPickerType = state.projectCollaboratorPickerType === normalizedType ? null : normalizedType;
+  state.projectCollaboratorQuery = '';
+  render();
+  if (state.projectCollaboratorPickerType) syncProjectCollaboratorSearchFocus();
+}
+
+function syncProjectCollaboratorSearchFocus() {
+  window.setTimeout(() => {
+    const input = document.querySelector('[data-project-collaborator-search]');
+    if (!(input instanceof HTMLInputElement)) return;
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+  }, 0);
+}
+
+function addProjectCollaborator(name) {
+  const project = getActiveProject();
+  const member = getProjectMemberDirectory().find((item) => item.name === name);
+  if (!project || !member || getProjectCollaborators(project).some((item) => item.name === name)) return;
+  if (member.isAgent) {
+    project.agents = [...new Set([...(project.agents || []), member.name])];
+  } else {
+    project.members = [...new Set([...(project.members || []), member.name])];
+  }
+  const rememberedPeople = new Map(project.rememberedPeople || []);
+  rememberedPeople.set(member.name, getCollaboratorDefaultDesc(member.name, member.isAgent));
+  project.rememberedPeople = [...rememberedPeople.entries()];
+  project.updated = '现在';
+  state.projectCollaboratorManagerType = member.isAgent ? 'agent' : 'human';
+  state.projectCollaboratorPickerType = member.isAgent ? 'agent' : 'human';
+  state.projectCollaboratorQuery = '';
+  render();
+  syncProjectCollaboratorSearchFocus();
+  showToast(`${member.name} 已加入项目`);
 }
 
 function renderProjectDetailMemberManager(project) {
@@ -3416,6 +3672,9 @@ function getCollaborationInstructionText(project, instructions) {
 }
 
 function getGroupChatTitle(project) {
+  const activeGroup = getProjectGroups(project).find((group) => group.id === project.activeGroupId)
+    || getProjectGroups(project)[0];
+  if (activeGroup?.name) return activeGroup.name;
   if (project.title.includes('吊车') || project.scenario === 'AI 投放') return '吊车监控项目群';
   if (project.title.includes('库存')) return '库存提示项目群';
   return '项目群聊';
@@ -5761,6 +6020,8 @@ function buildNewProject(id, serial) {
     agentStatuses: [],
     sessions: [],
     groupMessages: [],
+    groups: [],
+    activeGroupId: null,
   };
 }
 
@@ -6758,16 +7019,17 @@ function renderProjectMemberOption(member) {
 
 function getProjectMemberDirectory() {
   const directory = new Map();
-  const addMember = (name, isAgent) => {
+  const addMember = (name, isAgent, role = null) => {
     if (!name || name === currentUserName || name === 'Snack') return;
     const existing = directory.get(name);
     if (existing?.isAgent || (!isAgent && existing)) return;
     directory.set(name, {
       name,
       isAgent,
-      role: getCollaboratorRole(name, isAgent),
+      role: role || getCollaboratorRole(name, isAgent),
     });
   };
+  projectUserDirectory.forEach((member) => addMember(member.name, false, member.role));
   projectFolders.forEach((project) => {
     (project.members || []).forEach((name) => addMember(
       name,
@@ -7740,6 +8002,18 @@ function createSingleChat(projectId) {
 function createGroupChat(projectId, participants = null) {
   const project = getProjectById(projectId);
   if (!project) return;
+  if (Array.isArray(participants)) {
+    const groups = getProjectGroups(project);
+    const groupNumber = groups.length + 1;
+    const group = {
+      id: `project-group-${Date.now()}`,
+      name: groups.length ? `${project.title}协作群 ${groupNumber}` : `${project.title}群`,
+      createdAt: '2026年8月4日',
+      participants: [...new Set([currentUserName, 'Snack', ...participants])],
+    };
+    project.groups = [...groups, group];
+    project.activeGroupId = group.id;
+  }
   if (!project.groupMessages || !project.groupMessages.length) {
     project.groupMessages = [
       [currentUserName, `创建「${project.title}」项目群。`, '刚刚'],
@@ -8722,7 +8996,7 @@ function handleBodyClick(event) {
   if (state.projectMemberPickerOpen && !clickedInsideMemberPicker) closeProjectMemberPicker();
   const clickedInsideWikiTopicPicker = event.target.closest('[data-project-wiki-topic-picker]');
   if (state.projectWikiTopicPickerOpen && !clickedInsideWikiTopicPicker) closeProjectWikiTopicPicker();
-  const target = event.target.closest('[data-view], [data-create-project], [data-project-config], [data-project-detail-sidebar], [data-project-detail-tab], [data-project-modal-close], [data-project-modal-backdrop], [data-project-group-chat-open], [data-project-group-chat-close], [data-project-group-chat-backdrop], [data-project-group-chat-filter], [data-project-group-chat-option], [data-project-group-chat-complete], [data-create-issue], [data-issue-modal-close], [data-issue-modal-backdrop], [data-project-folder-remove], [data-project-wiki-topic-toggle], [data-project-wiki-topic-option], [data-project-knowledge-add], [data-project-members-add], [data-project-member-picker], [data-project-member-add], [data-project-member-search], [data-project-member-option], [data-project-member-remove], [data-snack-desktop-download], [data-monitoring-rule-recognize], [data-monitoring-rule-edit], [data-monitoring-rule-remove], [data-project-intake-submit], [data-meeting-intake-submit], [data-mock-action], [data-confirmation-action], [data-confirmation-cancel], [data-model-menu], [data-model-select], [data-project-picker], [data-project-context], [data-project-context-empty], [data-project-picker-search], [data-agent-status-toggle], [data-task-tab], [data-task-filter], [data-project-board-tab], [data-issue-tab], [data-close-issue-tab], [data-todo-inbox-issue], [data-issue-id], [data-log-doc], [data-close-log-doc], [data-project-open], [data-project-toggle], [data-project-sessions], [data-project-session], [data-project-menu], [data-project-action], [data-project-create-menu], [data-project-create-action], [data-loose-session], [data-board-sidebar], [data-member-sidebar], [data-member-tab], [data-member-manager-toggle], [data-member-manager-add], [data-member-manager-remove], [data-agent-tab], [data-agent-chat], [data-agent-menu], [data-agent-select], [data-resource-tab], [data-toast]');
+  const target = event.target.closest('[data-view], [data-create-project], [data-project-config], [data-project-detail-sidebar], [data-project-detail-tab], [data-project-modal-close], [data-project-modal-backdrop], [data-project-group-chat-open], [data-project-group-chat-close], [data-project-group-chat-backdrop], [data-project-group-chat-filter], [data-project-group-chat-option], [data-project-group-chat-complete], [data-project-group-action], [data-project-collaborator-manager], [data-project-collaborator-add], [data-project-collaborator-option], [data-create-issue], [data-issue-modal-close], [data-issue-modal-backdrop], [data-project-folder-remove], [data-project-wiki-topic-toggle], [data-project-wiki-topic-option], [data-project-knowledge-add], [data-project-members-add], [data-project-member-picker], [data-project-member-add], [data-project-member-search], [data-project-member-option], [data-project-member-remove], [data-snack-desktop-download], [data-monitoring-rule-recognize], [data-monitoring-rule-edit], [data-monitoring-rule-remove], [data-project-intake-submit], [data-meeting-intake-submit], [data-mock-action], [data-confirmation-action], [data-confirmation-cancel], [data-model-menu], [data-model-select], [data-project-picker], [data-project-context], [data-project-context-empty], [data-project-picker-search], [data-agent-status-toggle], [data-task-tab], [data-task-filter], [data-project-board-tab], [data-issue-tab], [data-close-issue-tab], [data-todo-inbox-issue], [data-issue-id], [data-log-doc], [data-close-log-doc], [data-project-open], [data-project-toggle], [data-project-sessions], [data-project-session], [data-project-menu], [data-project-action], [data-project-create-menu], [data-project-create-action], [data-loose-session], [data-board-sidebar], [data-member-sidebar], [data-member-tab], [data-member-manager-toggle], [data-member-manager-add], [data-member-manager-remove], [data-agent-tab], [data-agent-chat], [data-agent-menu], [data-agent-select], [data-resource-tab], [data-toast]');
   if (!target) {
     if (state.openProjectMenuId || state.openProjectCreateMenuId || state.modelPickerOpen || state.projectPickerOpen) {
       state.openProjectMenuId = null;
@@ -8772,6 +9046,7 @@ function handleBodyClick(event) {
     return;
   }
   if (target.dataset.projectGroupChatOpen) return openProjectGroupChat(target.dataset.projectGroupChatOpen);
+  if (target.dataset.projectGroupAction) return runProjectGroupAction(target.dataset.projectGroupAction, target.dataset.projectGroupId);
   if (target.dataset.projectGroupChatFilter) {
     state.projectGroupChatFilter = target.dataset.projectGroupChatFilter;
     render();
@@ -8780,6 +9055,9 @@ function handleBodyClick(event) {
   }
   if (target.dataset.projectGroupChatOption) return toggleProjectGroupChatParticipant(target.dataset.projectGroupChatOption);
   if (target.dataset.projectGroupChatComplete !== undefined) return completeProjectGroupChat();
+  if (target.dataset.projectCollaboratorManager) return toggleProjectCollaboratorManager(target.dataset.projectCollaboratorManager);
+  if (target.dataset.projectCollaboratorAdd) return toggleProjectCollaboratorPicker(target.dataset.projectCollaboratorAdd);
+  if (target.dataset.projectCollaboratorOption) return addProjectCollaborator(target.dataset.projectCollaboratorOption);
   if (target.dataset.projectDetailSidebar) return setProjectDetailSidebar(target.dataset.projectDetailSidebar);
   if (target.dataset.projectDetailTab) {
     state.projectDetailTab = target.dataset.projectDetailTab === 'knowledge' ? 'knowledge' : 'collaborators';
@@ -8974,6 +9252,12 @@ document.body.addEventListener('input', (event) => {
     state.memberManagerQuery = event.target.value;
     render();
     syncMemberManagerSearchFocus();
+    return;
+  }
+  if (event.target instanceof HTMLInputElement && event.target.dataset.projectCollaboratorSearch !== undefined) {
+    state.projectCollaboratorQuery = event.target.value;
+    render();
+    syncProjectCollaboratorSearchFocus();
     return;
   }
   if (event.target instanceof HTMLInputElement && event.target.dataset.projectPickerSearch !== undefined) {
