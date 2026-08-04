@@ -76,6 +76,16 @@ const state = {
   activeLooseSession: null,
   agentTab: 'square',
   resourceTab: 'all',
+  localKnowledgeModalOpen: false,
+  localKnowledgeFiles: [],
+  localKnowledgeSource: null,
+  localKnowledgeProjectId: null,
+  localKnowledgeAssetId: null,
+  localKnowledgeSyncToCloud: true,
+  localKnowledgeShareEnabled: false,
+  localKnowledgeShareProjectIds: [],
+  projectAssetShareOpen: null,
+  projectKnowledgeAttachProjectId: null,
   selectedAgent: 'Snack',
   agentMenuOpen: false,
   logDocIssue: null,
@@ -915,6 +925,7 @@ function setView(view) {
   state.projectPickerOpen = false;
   state.projectCreationOpen = false;
   state.projectEditingId = null;
+  state.projectKnowledgeAttachProjectId = null;
   state.issueCreationOpen = false;
   state.issueCreationProjectId = null;
   state.view = view;
@@ -939,7 +950,7 @@ function render() {
   renderProjectHistory();
   renderMeetingDemoControls();
   mainSurface.classList.toggle('edge-to-edge', ['project', 'projectBoard', 'projectSchedule', 'issue', 'recordLibrary', 'recordSettings', 'recordSummary'].includes(state.view));
-  mainSurface.innerHTML = `${renderMainView()}${state.projectCreationOpen ? renderProjectCreationModal() : ''}${state.issueCreationOpen ? renderIssueCreationModal() : ''}${state.projectGroupChatOpen ? renderProjectGroupChatModal() : ''}${state.projectGroupActionModal ? renderProjectGroupActionModal() : ''}${renderMeetingOverlays()}${renderSnackRecordOverlays()}`;
+  mainSurface.innerHTML = `${renderMainView()}${renderLocalKnowledgePickerInputs()}${state.projectCreationOpen ? renderProjectCreationModal() : ''}${state.issueCreationOpen ? renderIssueCreationModal() : ''}${state.projectGroupChatOpen ? renderProjectGroupChatModal() : ''}${state.projectGroupActionModal ? renderProjectGroupActionModal() : ''}${renderLocalKnowledgeModal()}${renderProjectAssetShareModal()}${renderMeetingOverlays()}${renderSnackRecordOverlays()}`;
   renderIcons();
   syncProjectRenameFocus();
   syncProjectCreationFocus();
@@ -1854,6 +1865,92 @@ function refreshProjectCollaboratorsPage(options = {}) {
   return true;
 }
 
+function renderProjectKnowledgeAttachPicker(project) {
+  const mountedTopics = new Set(project.wikiTopics || []);
+  const open = state.projectKnowledgeAttachProjectId === project.id;
+  return `
+    <span class="project-knowledge-attach-control ${open ? 'open' : ''}" data-project-knowledge-attach-picker>
+      <button
+        class="project-info-config-entry project-knowledge-action-button"
+        type="button"
+        data-project-knowledge-picker-toggle="${escapeAttribute(project.id)}"
+        aria-haspopup="dialog"
+        aria-expanded="${open ? 'true' : 'false'}"
+      ><i data-lucide="plus"></i><span>添加知识</span></button>
+      ${open ? `
+        <section class="project-knowledge-topic-menu" role="dialog" aria-label="选择要挂载的 Topic">
+          <header><strong>选择 Topic</strong><small>选择后立即挂载到当前项目</small></header>
+          <div class="project-knowledge-topic-options" role="listbox" aria-label="可挂载的 Wiki Topic">
+            ${projectWikiTopicOptions.map((topic) => {
+    const mounted = mountedTopics.has(topic.name);
+    return `
+                <button
+                  class="project-knowledge-topic-option ${mounted ? 'mounted' : ''}"
+                  type="button"
+                  role="option"
+                  aria-selected="${mounted ? 'true' : 'false'}"
+                  aria-label="${escapeAttribute(topic.name)}${mounted ? '，已挂载' : ''}"
+                  data-project-knowledge-topic="${escapeAttribute(topic.name)}"
+                  data-project-id="${escapeAttribute(project.id)}"
+                  ${mounted ? 'disabled' : ''}
+                >
+                  <span class="project-knowledge-topic-icon ${escapeAttribute(topic.type)}"><i data-lucide="${topic.type === 'yuque' ? 'book-open-text' : 'database'}"></i></span>
+                  <span class="project-knowledge-topic-copy"><strong>${escapeHtml(topic.name)}</strong><small><em>${escapeHtml(topic.source)}</em>${escapeHtml(topic.description)}</small></span>
+                  <span class="project-knowledge-topic-status">${mounted ? '<i data-lucide="check"></i>已挂载' : '<i data-lucide="plus"></i>'}</span>
+                </button>
+              `;
+  }).join('')}
+          </div>
+          <footer><span>没有合适的 Topic？</span><button type="button" data-project-wiki-topic-create aria-label="创建 Wiki Topic（模拟外链）" title="将在新页面打开（模拟）"><i data-lucide="external-link"></i>创建 Wiki Topic</button></footer>
+        </section>
+      ` : ''}
+    </span>
+  `;
+}
+
+function toggleProjectKnowledgeAttachPicker(projectId) {
+  if (!getProjectById(projectId)) return;
+  state.projectKnowledgeAttachProjectId = state.projectKnowledgeAttachProjectId === projectId ? null : projectId;
+  render();
+}
+
+function attachProjectKnowledgeTopic(projectId, topicName) {
+  const project = getProjectById(projectId);
+  if (!project || !projectWikiTopicOptions.some((topic) => topic.name === topicName)) return;
+  project.wikiTopics = [...new Set([...(project.wikiTopics || []), topicName])];
+  state.projectKnowledgeAttachProjectId = null;
+  render();
+  showToast(`已挂载 Topic“${topicName}”`);
+}
+
+function simulateWikiTopicCreationLink() {
+  state.projectKnowledgeAttachProjectId = null;
+  render();
+  showToast('已模拟打开 Wiki Topic 创建页');
+}
+
+function getProjectWikiTopicAssetId(topicName) {
+  return `wiki-topic:${topicName}`;
+}
+
+function getProjectWikiTopicAsset(projectId, assetId) {
+  const project = getProjectById(projectId);
+  const topicName = typeof assetId === 'string' && assetId.startsWith('wiki-topic:')
+    ? assetId.slice('wiki-topic:'.length)
+    : '';
+  const topic = projectWikiTopicOptions.find((item) => item.name === topicName);
+  if (!project || !topic || !(project.wikiTopics || []).includes(topicName)) return null;
+  return {
+    id: assetId,
+    name: topic.name,
+    kind: 'wiki-topic',
+    topicName,
+    source: topic.source,
+    label: `${topic.source} · 云端读取`,
+    sharedProjectIds: project.wikiTopicShares?.[topicName] || [],
+  };
+}
+
 function renderProjectKnowledgePage(project) {
   const wikiTopics = project.wikiTopics || [];
   const sourceFolders = (project.sourceFolders || []).map((folder) => (
@@ -1867,32 +1964,56 @@ function renderProjectKnowledgePage(project) {
           <h2>资产</h2>
           <p>集中查看项目已连接的语雀空间、LLM Wiki 和本地文件夹。</p>
         </div>
-        <button class="project-info-config-entry" type="button" data-project-config="${escapeAttribute(project.id)}">
-          <i data-lucide="plus"></i>
-          <span>添加知识</span>
-        </button>
+        <div class="project-knowledge-actions">
+          ${renderProjectKnowledgeAttachPicker(project)}
+          <button class="project-info-config-entry project-knowledge-action-button" type="button" data-open-local-knowledge="${escapeAttribute(project.id)}"><i data-lucide="folder-up"></i><span>添加本地文件</span></button>
+        </div>
       </header>
-      <section class="project-knowledge-tab-card">
-        <header><span>已关联知识</span><em>${resourceCount}</em></header>
-        <div class="project-detail-resource-list">
-          ${wikiTopics.map((topic) => `
-            <span><i data-lucide="book-open-text"></i><strong>${escapeHtml(topic)}</strong><small>${topic.includes('空间') ? '语雀空间' : 'LLM Wiki'}</small></span>
-          `).join('')}
+      <div class="project-detail-resource-list project-knowledge-resource-list" role="list" aria-label="已关联知识">
+          ${wikiTopics.map((topicName) => {
+    const topic = projectWikiTopicOptions.find((item) => item.name === topicName);
+    const icon = topic?.type === 'llm-wiki' ? 'database' : 'book-open-text';
+    const source = topic?.source || '云端知识';
+    const assetId = getProjectWikiTopicAssetId(topicName);
+    return `<article class="project-local-asset-row project-wiki-topic-row" role="listitem">
+      <i data-lucide="${icon}"></i><span><strong>${escapeHtml(topicName)}</strong><small>${escapeHtml(source)}</small></span>
+      <div class="project-local-asset-actions">
+        <button type="button" class="project-asset-text-button" data-project-asset-action="share" data-project-id="${escapeAttribute(project.id)}" data-project-asset-id="${escapeAttribute(assetId)}" aria-label="分享资产" title="分享给其他项目"><i data-lucide="share-2"></i>分享</button>
+        <i class="project-asset-action-divider"></i>
+        <button type="button" class="danger" data-project-asset-action="delete" data-project-id="${escapeAttribute(project.id)}" data-project-asset-id="${escapeAttribute(assetId)}" aria-label="删除资产" title="删除"><i data-lucide="trash-2"></i></button>
+      </div>
+    </article>`;
+  }).join('')}
           ${sourceFolders.map((folder) => {
     const isMeeting = folder.kind === 'meeting';
-    const icon = isMeeting ? 'file-text' : 'folder';
-    const label = isMeeting ? '会议纪要' : (Number.isFinite(folder.fileCount) ? `${folder.fileCount} 个文件` : '本地文件夹');
-    return `<span><i data-lucide="${icon}"></i><strong>${escapeHtml(folder.name)}</strong><small>${label}</small></span>`;
+    const isLocalFiles = folder.kind === 'local-files';
+    const icon = isMeeting ? 'file-text' : (isLocalFiles ? 'files' : 'folder');
+    const label = folder.label || (isMeeting ? '会议纪要' : (Number.isFinite(folder.fileCount) ? `${folder.fileCount} 个文件` : '本地文件夹'));
+    if (!isLocalFiles) return `<span role="listitem"><i data-lucide="${icon}"></i><strong>${escapeHtml(folder.name)}</strong><small>${label}</small></span>`;
+    const transcriptionAction = folder.audioCount ? (folder.transcriptionStatus === 'complete'
+      ? `<button type="button" class="project-asset-text-button is-complete" data-project-asset-action="meeting-input" data-project-id="${escapeAttribute(project.id)}" data-project-asset-id="${escapeAttribute(folder.id)}" aria-label="前往生成会议纪要" title="前往生成会议纪要"><i data-lucide="file-text"></i>生成会议纪要</button>`
+      : `<button type="button" class="project-asset-text-button" data-project-asset-action="transcribe" data-project-id="${escapeAttribute(project.id)}" data-project-asset-id="${escapeAttribute(folder.id)}" aria-label="转写音频" title="转写音频"><i data-lucide="file-audio"></i>转写</button>`)
+      : '';
+    return `<article class="project-local-asset-row" role="listitem">
+      <i data-lucide="${icon}"></i><span><strong>${escapeHtml(folder.name)}</strong><small>${label}</small></span>
+      <div class="project-local-asset-actions">
+        <button type="button" class="project-asset-text-button" data-project-asset-action="share" data-project-id="${escapeAttribute(project.id)}" data-project-asset-id="${escapeAttribute(folder.id)}" aria-label="分享资产" title="分享给其他项目"><i data-lucide="share-2"></i>分享</button>
+        ${transcriptionAction}
+        <i class="project-asset-action-divider"></i>
+        <button type="button" class="${folder.cloudSynced ? 'is-complete' : ''}" data-project-asset-action="cloud" data-project-id="${escapeAttribute(project.id)}" data-project-asset-id="${escapeAttribute(folder.id)}" aria-label="${folder.cloudSynced ? '已同步到云端' : '同步到云端'}" title="${folder.cloudSynced ? '已同步到云端' : '同步到云端'}"><i data-lucide="${folder.cloudSynced ? 'cloud-check' : 'cloud-upload'}"></i></button>
+        <i class="project-asset-action-divider"></i>
+        <button type="button" class="danger" data-project-asset-action="delete" data-project-id="${escapeAttribute(project.id)}" data-project-asset-id="${escapeAttribute(folder.id)}" aria-label="删除资产" title="删除"><i data-lucide="trash-2"></i></button>
+      </div>
+    </article>`;
   }).join('')}
           ${resourceCount ? '' : `
             <div class="project-knowledge-tab-empty">
               <span><i data-lucide="book-open-text"></i></span>
               <strong>尚未关联知识</strong>
-              <p>通过项目配置添加语雀空间、LLM Wiki 或本地文件夹。</p>
+              <p>点击“添加知识”挂载 Topic，或添加本地文件。</p>
             </div>
           `}
-        </div>
-      </section>
+      </div>
     </section>
   `;
 }
@@ -4780,6 +4901,240 @@ function renderKnowledgeWorkspace() {
   `;
 }
 
+const localKnowledgeAudioExtensions = new Set(['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg', 'opus']);
+const localKnowledgeDocumentExtensions = new Set(['ppt', 'pptx', 'pdf', 'jpg', 'jpeg', 'png', 'gif', 'webp', 'html', 'htm', 'md', 'markdown', 'txt', 'doc', 'docx', 'csv', 'xlsx', 'xls']);
+
+function getLocalKnowledgeFileKind(name) {
+  const extension = String(name).split('.').pop().toLowerCase();
+  if (localKnowledgeAudioExtensions.has(extension)) return 'audio';
+  if (localKnowledgeDocumentExtensions.has(extension)) return 'document';
+  return 'unsupported';
+}
+
+function getLocalKnowledgeSummary(files = state.localKnowledgeFiles) {
+  return files.reduce((summary, file) => {
+    summary[getLocalKnowledgeFileKind(file.name)] += 1;
+    return summary;
+  }, { audio: 0, document: 0, unsupported: 0 });
+}
+
+function getLocalKnowledgeAssetName() {
+  if (state.localKnowledgeSource === 'folder') {
+    const relativePath = state.localKnowledgeFiles.find((file) => file.relativePath)?.relativePath || '';
+    return relativePath.split('/')[0] || '本地文件夹';
+  }
+  if (state.localKnowledgeFiles.length === 1) return state.localKnowledgeFiles[0].name;
+  return `本地文件 · ${state.localKnowledgeFiles.length} 项`;
+}
+
+function renderLocalKnowledgeModal() {
+  if (!state.localKnowledgeModalOpen) return '';
+  const files = state.localKnowledgeFiles;
+  const summary = getLocalKnowledgeSummary(files);
+  const acceptedCount = summary.audio + summary.document;
+  const canUpload = acceptedCount > 0;
+  return `
+    <section class="local-knowledge-backdrop" data-local-knowledge-backdrop role="presentation">
+      <section class="local-knowledge-modal" role="dialog" aria-modal="true" aria-labelledby="localKnowledgeTitle">
+        <header class="local-knowledge-header">
+          <div><h2 id="localKnowledgeTitle">已添加到项目资产</h2><p>资产已生成；同步云端、分享和删除可在资产条目旁继续操作。</p></div>
+          <button class="local-knowledge-close" type="button" aria-label="关闭本地文件引导" data-close-local-knowledge><i data-lucide="x"></i></button>
+        </header>
+        <div class="local-knowledge-body">
+          ${files.length ? `
+            <section class="local-knowledge-scan-result" aria-live="polite">
+              <header><span class="local-knowledge-scan-icon"><i data-lucide="${state.localKnowledgeSource === 'folder' ? 'folder-open' : 'files'}"></i></span><div><strong>${escapeHtml(getLocalKnowledgeAssetName())}</strong><small>已检测 ${files.length} 项内容${summary.unsupported ? `，${summary.unsupported} 项暂不支持` : ''}</small></div></header>
+              <div class="local-knowledge-type-grid">
+                <span><i data-lucide="audio-lines"></i><strong>${summary.audio}</strong> 个音频</span>
+                <span><i data-lucide="file-text"></i><strong>${summary.document}</strong> 个其他文件</span>
+                ${summary.unsupported ? `<span class="unsupported"><i data-lucide="circle-alert"></i><strong>${summary.unsupported}</strong> 个跳过</span>` : ''}
+              </div>
+              ${summary.audio ? `<p><i data-lucide="badge-check"></i>音频上传后将转码并生成可检索文本。</p>` : ''}
+              ${summary.document ? `<p><i data-lucide="badge-check"></i>文档、图片和表格将按原文件类型读取。</p>` : ''}
+            </section>
+          ` : `<div class="local-knowledge-empty"><i data-lucide="folder-search-2"></i><strong>还没有选择内容</strong><span>选择后会检测文件类型，并展示对应的上传处理方式。</span></div>`}
+        </div>
+        <footer class="local-knowledge-footer"><span>${files.length ? `已生成 1 个${state.localKnowledgeSource === 'folder' ? '文件夹' : '本地文件'}资产条目` : ''}</span><div><button class="primary-button" type="button" data-submit-local-knowledge ${canUpload ? '' : 'disabled'}><i data-lucide="check"></i>完成</button></div></footer>
+      </section>
+    </section>
+  `;
+}
+
+function renderLocalKnowledgePickerInputs() {
+  return `<input id="localKnowledgeFilesInput" data-local-knowledge-input="files" type="file" multiple hidden accept=".mp3,.wav,.m4a,.aac,.flac,.ogg,.opus,.ppt,.pptx,.pdf,.jpg,.jpeg,.png,.gif,.webp,.html,.htm,.md,.markdown,.txt,.doc,.docx,.csv,.xlsx,.xls" />
+    <input id="localKnowledgeFolderInput" data-local-knowledge-input="folder" type="file" webkitdirectory directory multiple hidden />`;
+}
+
+function openLocalKnowledgeModal(projectId) {
+  openLocalKnowledgePicker(projectId);
+}
+
+function openLocalKnowledgePicker(projectId) {
+  if (!getProjectById(projectId)) return;
+  state.localKnowledgeModalOpen = false;
+  state.localKnowledgeProjectId = projectId;
+  state.localKnowledgeAssetId = null;
+  state.localKnowledgeFiles = [];
+  state.localKnowledgeSource = null;
+  state.localKnowledgeSyncToCloud = true;
+  state.localKnowledgeShareEnabled = false;
+  state.localKnowledgeShareProjectIds = [];
+  render();
+  window.setTimeout(() => {
+    const input = document.querySelector('#localKnowledgeFilesInput');
+    if (input instanceof HTMLInputElement) input.click();
+  }, 0);
+}
+
+function closeLocalKnowledgeModal() {
+  state.localKnowledgeModalOpen = false;
+  state.localKnowledgeProjectId = null;
+  render();
+}
+
+function handleLocalKnowledgeSelection(input) {
+  const source = input.dataset.localKnowledgeInput;
+  state.localKnowledgeFiles = [...input.files].map((file) => ({ name: file.name, relativePath: file.webkitRelativePath || '' }));
+  state.localKnowledgeSource = source === 'folder' ? 'folder' : 'files';
+  createLocalKnowledgeAsset();
+}
+
+function createLocalKnowledgeAsset() {
+  const files = state.localKnowledgeFiles.filter((file) => getLocalKnowledgeFileKind(file.name) !== 'unsupported');
+  if (!files.length) return showToast('请选择支持的本地文件');
+  const summary = getLocalKnowledgeSummary(files);
+  const project = getProjectById(state.localKnowledgeProjectId);
+  if (!project) return closeLocalKnowledgeModal();
+  const contentSummary = [summary.audio ? `${summary.audio} 个音频（将转码）` : '', summary.document ? `${summary.document} 个文件` : ''].filter(Boolean).join('、');
+  const asset = {
+    id: `local-knowledge-${Date.now()}`, name: getLocalKnowledgeAssetName(), fileCount: files.length, kind: 'local-files',
+    contentSummary, audioCount: summary.audio, transcriptionStatus: summary.audio ? 'available' : null,
+    label: `${contentSummary} · 仅本地读取`, cloudSynced: false, sharedProjectIds: [],
+  };
+  project.sourceFolders = [...(project.sourceFolders || []), asset];
+  state.localKnowledgeAssetId = asset.id;
+  state.localKnowledgeModalOpen = false;
+  render();
+  showToast(`本地内容已添加到“${project.title}”的项目资产`);
+}
+
+function submitLocalKnowledge() {
+  state.localKnowledgeModalOpen = false;
+  state.localKnowledgeProjectId = null;
+  state.localKnowledgeAssetId = null;
+  state.localKnowledgeFiles = [];
+  state.localKnowledgeSource = null;
+  state.localKnowledgeShareProjectIds = [];
+  render();
+}
+
+function getProjectLocalAsset(projectId, assetId) {
+  return getProjectById(projectId)?.sourceFolders?.find((item) => item.id === assetId && item.kind === 'local-files') || null;
+}
+
+function getProjectAsset(projectId, assetId) {
+  return getProjectLocalAsset(projectId, assetId) || getProjectWikiTopicAsset(projectId, assetId);
+}
+
+function runProjectAssetAction(action, projectId, assetId) {
+  const project = getProjectById(projectId);
+  const asset = getProjectAsset(projectId, assetId);
+  if (!project || !asset) return;
+  if (action === 'cloud') {
+    if (asset.kind !== 'local-files') return;
+    asset.cloudSynced = true;
+    asset.label = asset.label.replace('仅本地读取', '已同步到云端');
+    render();
+    showToast('该资产已同步到云端');
+    return;
+  }
+  if (action === 'share') {
+    state.projectAssetShareOpen = { projectId, assetId, projectIds: [...(asset.sharedProjectIds || [])] };
+    render();
+    return;
+  }
+  if (action === 'transcribe') {
+    if (asset.kind !== 'local-files') return;
+    asset.transcriptionStatus = 'complete';
+    asset.label = `${asset.contentSummary || asset.label.replace(/ · .+$/, '')} · 已转写${asset.cloudSynced ? ' · 已同步到云端' : ' · 仅本地读取'}`;
+    render();
+    showToast('音频已转写完成，可粘贴到会议输入框生成纪要');
+    return;
+  }
+  if (action === 'meeting-input') {
+    if (asset.kind !== 'local-files') return;
+    state.projectChatDraftProjectId = projectId;
+    state.projectChatDraft = `请基于以下音频转写生成会议纪要：\n\n【${asset.name}】\n（已完成 ${asset.audioCount || 1} 段音频转写，可在此继续补充会议背景和参会人。）`;
+    openProjectSession(projectId, 'group');
+    showToast('已前往会议纪要生成，可继续补充会议信息');
+    return;
+  }
+  if (action === 'delete') {
+    if (asset.kind === 'wiki-topic') {
+      project.wikiTopics = (project.wikiTopics || []).filter((topicName) => topicName !== asset.topicName);
+      if (project.wikiTopicShares) {
+        const nextShares = { ...project.wikiTopicShares };
+        delete nextShares[asset.topicName];
+        project.wikiTopicShares = nextShares;
+      }
+      render();
+      showToast('Wiki Topic 已删除');
+      return;
+    }
+    getVisibleProjectFolders().forEach((item) => {
+      item.sourceFolders = (item.sourceFolders || []).filter((folder) => folder.id !== assetId);
+    });
+    render();
+    showToast('本地资产已删除');
+  }
+}
+
+function renderProjectAssetShareModal() {
+  const shareState = state.projectAssetShareOpen;
+  if (!shareState) return '';
+  const project = getProjectById(shareState.projectId);
+  const asset = getProjectAsset(shareState.projectId, shareState.assetId);
+  if (!project || !asset) return '';
+  const projects = getVisibleProjectFolders().filter((item) => item.id !== project.id);
+  return `
+    <section class="project-asset-share-backdrop" data-project-asset-share-backdrop role="presentation">
+      <section class="project-asset-share-modal" role="dialog" aria-modal="true" aria-labelledby="projectAssetShareTitle">
+        <header><div><h2 id="projectAssetShareTitle">分享资产</h2><p>${escapeHtml(asset.name)}</p></div><button type="button" data-project-asset-share-close aria-label="关闭分享"><i data-lucide="x"></i></button></header>
+        <div class="project-asset-share-body">${projects.length ? projects.map((item) => `<label><input type="checkbox" data-project-asset-share-project="${escapeAttribute(item.id)}" ${shareState.projectIds.includes(item.id) ? 'checked' : ''} /><span><strong>${escapeHtml(item.title)}</strong><small>允许该项目读取这项${asset.kind === 'wiki-topic' ? '云端知识' : '本地资产'}</small></span></label>`).join('') : '<p>暂无其他项目可分享。</p>'}</div>
+        <footer><button class="secondary-button" type="button" data-project-asset-share-close>取消</button><button class="primary-button" type="button" data-project-asset-share-save>保存分享</button></footer>
+      </section>
+    </section>`;
+}
+
+function saveProjectAssetShare() {
+  const shareState = state.projectAssetShareOpen;
+  const asset = shareState && getProjectAsset(shareState.projectId, shareState.assetId);
+  if (!shareState || !asset) return;
+  const selectedIds = shareState.projectIds;
+  if (asset.kind === 'wiki-topic') {
+    const sourceProject = getProjectById(shareState.projectId);
+    if (!sourceProject) return;
+    sourceProject.wikiTopicShares = { ...(sourceProject.wikiTopicShares || {}), [asset.topicName]: selectedIds };
+    getVisibleProjectFolders().filter((project) => project.id !== shareState.projectId).forEach((project) => {
+      project.wikiTopics = (project.wikiTopics || []).filter((topicName) => topicName !== asset.topicName);
+      if (selectedIds.includes(project.id)) project.wikiTopics.push(asset.topicName);
+    });
+    state.projectAssetShareOpen = null;
+    render();
+    showToast(selectedIds.length ? '已更新知识分享范围' : '已取消知识分享');
+    return;
+  }
+  asset.sharedProjectIds = selectedIds;
+  getVisibleProjectFolders().filter((project) => project.id !== shareState.projectId).forEach((project) => {
+    const hasShare = selectedIds.includes(project.id);
+    project.sourceFolders = (project.sourceFolders || []).filter((item) => item.id !== asset.id);
+    if (hasShare) project.sourceFolders.push({ ...asset, label: `${asset.label} · 已共享` });
+  });
+  state.projectAssetShareOpen = null;
+  render();
+  showToast(selectedIds.length ? '已更新项目分享范围' : '已取消资产分享');
+}
+
 function renderWorkspaceToolbar(left, placeholder) {
   return `
     <section class="workspace-toolbar">
@@ -4817,6 +5172,7 @@ function renderResourceCard(item) {
 }
 
 function getResourceIcon(item) {
+  if (item.source === 'local') return item.meta?.startsWith('本地文件夹') ? 'folder-open' : 'file-stack';
   const icons = { skill: 'sparkles', tool: 'wrench', knowledge: 'book-open', app: 'app-window' };
   return icons[item.type] || 'blocks';
 }
@@ -9162,9 +9518,12 @@ function handleBodyClick(event) {
   if (state.projectMemberPickerOpen && !clickedInsideMemberPicker) closeProjectMemberPicker();
   const clickedInsideWikiTopicPicker = event.target.closest('[data-project-wiki-topic-picker]');
   if (state.projectWikiTopicPickerOpen && !clickedInsideWikiTopicPicker) closeProjectWikiTopicPicker();
-  const target = event.target.closest('[data-view], [data-create-project], [data-project-config], [data-project-detail-sidebar], [data-project-detail-tab], [data-project-modal-close], [data-project-modal-backdrop], [data-project-group-chat-open], [data-project-group-chat-close], [data-project-group-chat-backdrop], [data-project-group-chat-filter], [data-project-group-chat-option], [data-project-group-chat-complete], [data-project-group-enter], [data-project-group-action], [data-project-group-page], [data-project-group-modal-close], [data-project-group-modal-backdrop], [data-project-group-modal-action], [data-project-collaborator-manager], [data-project-collaborator-add], [data-project-collaborator-option], [data-create-issue], [data-issue-modal-close], [data-issue-modal-backdrop], [data-project-folder-remove], [data-project-wiki-topic-toggle], [data-project-wiki-topic-option], [data-project-knowledge-add], [data-project-members-add], [data-project-member-picker], [data-project-member-add], [data-project-member-search], [data-project-member-option], [data-project-member-remove], [data-snack-desktop-download], [data-monitoring-rule-recognize], [data-monitoring-rule-edit], [data-monitoring-rule-remove], [data-project-intake-submit], [data-meeting-intake-submit], [data-mock-action], [data-confirmation-action], [data-confirmation-cancel], [data-model-menu], [data-model-select], [data-project-picker], [data-project-context], [data-project-context-empty], [data-project-picker-search], [data-agent-status-toggle], [data-task-tab], [data-task-filter], [data-project-board-tab], [data-issue-tab], [data-close-issue-tab], [data-todo-inbox-issue], [data-issue-id], [data-log-doc], [data-close-log-doc], [data-project-open], [data-project-toggle], [data-project-sessions], [data-project-session], [data-project-menu], [data-project-action], [data-project-create-menu], [data-project-create-action], [data-loose-session], [data-board-sidebar], [data-member-sidebar], [data-member-tab], [data-member-manager-toggle], [data-member-manager-add], [data-member-manager-remove], [data-agent-tab], [data-agent-chat], [data-agent-menu], [data-agent-select], [data-resource-tab], [data-toast]');
+  const clickedInsideProjectKnowledgeAttachPicker = event.target.closest('[data-project-knowledge-attach-picker]');
+  const shouldCloseProjectKnowledgeAttachPicker = Boolean(state.projectKnowledgeAttachProjectId) && !clickedInsideProjectKnowledgeAttachPicker;
+  if (shouldCloseProjectKnowledgeAttachPicker) state.projectKnowledgeAttachProjectId = null;
+  const target = event.target.closest('[data-view], [data-create-project], [data-project-config], [data-project-detail-sidebar], [data-project-detail-tab], [data-project-modal-close], [data-project-modal-backdrop], [data-project-group-chat-open], [data-project-group-chat-close], [data-project-group-chat-backdrop], [data-project-group-chat-filter], [data-project-group-chat-option], [data-project-group-chat-complete], [data-project-group-enter], [data-project-group-action], [data-project-group-page], [data-project-group-modal-close], [data-project-group-modal-backdrop], [data-project-group-modal-action], [data-project-collaborator-manager], [data-project-collaborator-add], [data-project-collaborator-option], [data-create-issue], [data-issue-modal-close], [data-issue-modal-backdrop], [data-local-knowledge-backdrop], [data-close-local-knowledge], [data-open-local-knowledge], [data-open-local-folder], [data-submit-local-knowledge], [data-project-asset-action], [data-project-asset-share-backdrop], [data-project-asset-share-close], [data-project-asset-share-save], [data-project-knowledge-picker-toggle], [data-project-knowledge-topic], [data-project-wiki-topic-create], [data-project-folder-remove], [data-project-wiki-topic-toggle], [data-project-wiki-topic-option], [data-project-knowledge-add], [data-project-members-add], [data-project-member-picker], [data-project-member-add], [data-project-member-search], [data-project-member-option], [data-project-member-remove], [data-snack-desktop-download], [data-monitoring-rule-recognize], [data-monitoring-rule-edit], [data-monitoring-rule-remove], [data-project-intake-submit], [data-meeting-intake-submit], [data-mock-action], [data-confirmation-action], [data-confirmation-cancel], [data-model-menu], [data-model-select], [data-project-picker], [data-project-context], [data-project-context-empty], [data-project-picker-search], [data-agent-status-toggle], [data-task-tab], [data-task-filter], [data-project-board-tab], [data-issue-tab], [data-close-issue-tab], [data-todo-inbox-issue], [data-issue-id], [data-log-doc], [data-close-log-doc], [data-project-open], [data-project-toggle], [data-project-sessions], [data-project-session], [data-project-menu], [data-project-action], [data-project-create-menu], [data-project-create-action], [data-loose-session], [data-board-sidebar], [data-member-sidebar], [data-member-tab], [data-member-manager-toggle], [data-member-manager-add], [data-member-manager-remove], [data-agent-tab], [data-agent-chat], [data-agent-menu], [data-agent-select], [data-resource-tab], [data-toast]');
   if (!target) {
-    if (state.openProjectMenuId || state.openProjectCreateMenuId || state.modelPickerOpen || state.projectPickerOpen) {
+    if (shouldCloseProjectKnowledgeAttachPicker || state.openProjectMenuId || state.openProjectCreateMenuId || state.modelPickerOpen || state.projectPickerOpen) {
       state.openProjectMenuId = null;
       state.openProjectCreateMenuId = null;
       state.modelPickerOpen = false;
@@ -9183,6 +9542,9 @@ function handleBodyClick(event) {
     || (target.dataset.projectPickerSearch !== undefined)
     || (target.dataset.projectWikiTopicToggle !== undefined)
     || target.dataset.projectWikiTopicOption
+    || target.dataset.projectKnowledgePickerToggle
+    || target.dataset.projectKnowledgeTopic
+    || (target.dataset.projectWikiTopicCreate !== undefined)
     || (target.dataset.projectKnowledgeAdd !== undefined)
     || (target.dataset.projectMembersAdd !== undefined)
     || (target.dataset.projectMemberPicker !== undefined)
@@ -9212,6 +9574,21 @@ function handleBodyClick(event) {
     return;
   }
   if (target.dataset.projectGroupModalAction) return handleProjectGroupModalAction(target.dataset.projectGroupModalAction);
+  if (target.dataset.localKnowledgeBackdrop !== undefined) {
+    if (event.target === target) closeLocalKnowledgeModal();
+    return;
+  }
+  if (target.dataset.closeLocalKnowledge !== undefined) return closeLocalKnowledgeModal();
+  if (target.dataset.openLocalKnowledge !== undefined) return openLocalKnowledgeModal(target.dataset.openLocalKnowledge);
+  if (target.dataset.submitLocalKnowledge !== undefined) return submitLocalKnowledge();
+  if (target.dataset.projectAssetAction) return runProjectAssetAction(target.dataset.projectAssetAction, target.dataset.projectId, target.dataset.projectAssetId);
+  if (target.dataset.projectAssetShareBackdrop !== undefined) {
+    if (event.target === target) { state.projectAssetShareOpen = null; render(); }
+    return;
+  }
+  if (target.dataset.projectAssetShareClose !== undefined) { state.projectAssetShareOpen = null; render(); return; }
+  if (target.dataset.projectAssetShareSave !== undefined) return saveProjectAssetShare();
+  if (target.dataset.addKnowledge !== undefined) return showToast('添加云端知识入口为模拟交互');
   if (target.dataset.projectGroupChatClose !== undefined) return closeProjectGroupChat();
   if (target.dataset.projectGroupChatBackdrop !== undefined) {
     if (event.target === target) closeProjectGroupChat();
@@ -9239,6 +9616,9 @@ function handleBodyClick(event) {
     return;
   }
   if (target.dataset.createIssue !== undefined) return openIssueCreationModal();
+  if (target.dataset.projectKnowledgePickerToggle) return toggleProjectKnowledgeAttachPicker(target.dataset.projectKnowledgePickerToggle);
+  if (target.dataset.projectKnowledgeTopic) return attachProjectKnowledgeTopic(target.dataset.projectId, target.dataset.projectKnowledgeTopic);
+  if (target.dataset.projectWikiTopicCreate !== undefined) return simulateWikiTopicCreationLink();
   if (target.dataset.projectConfig) return openProjectCreationModal(target.dataset.projectConfig);
   if (target.dataset.projectFolderRemove) return removeProjectFolder(target.dataset.projectFolderRemove);
   if (target.dataset.projectWikiTopicToggle !== undefined) return toggleProjectWikiTopicPicker();
@@ -9441,6 +9821,35 @@ document.body.addEventListener('input', (event) => {
 });
 document.body.addEventListener('change', (event) => {
   const target = event.target;
+  if (target instanceof HTMLInputElement && target.dataset.projectAssetShareProject) {
+    const shareState = state.projectAssetShareOpen;
+    if (!shareState) return;
+    const projectId = target.dataset.projectAssetShareProject;
+    shareState.projectIds = target.checked
+      ? [...new Set([...shareState.projectIds, projectId])]
+      : shareState.projectIds.filter((id) => id !== projectId);
+    return;
+  }
+  if (target instanceof HTMLInputElement && target.dataset.localKnowledgeInput !== undefined) {
+    handleLocalKnowledgeSelection(target);
+    return;
+  }
+  if (target instanceof HTMLInputElement && target.dataset.localKnowledgeSync !== undefined) {
+    state.localKnowledgeSyncToCloud = target.checked;
+    return;
+  }
+  if (target instanceof HTMLInputElement && target.dataset.localKnowledgeShareToggle !== undefined) {
+    state.localKnowledgeShareEnabled = target.checked;
+    if (!target.checked) state.localKnowledgeShareProjectIds = [];
+    render();
+    return;
+  }
+  if (target instanceof HTMLInputElement && target.dataset.localKnowledgeProject) {
+    state.localKnowledgeShareProjectIds = target.checked
+      ? [...new Set([...state.localKnowledgeShareProjectIds, target.dataset.localKnowledgeProject])]
+      : state.localKnowledgeShareProjectIds.filter((id) => id !== target.dataset.localKnowledgeProject);
+    return;
+  }
   if (target instanceof HTMLInputElement && target.dataset.recordSelect !== undefined) {
     state.snackRecordSelection = target.checked
       ? [...new Set([...state.snackRecordSelection, target.dataset.recordSelect])]
@@ -9534,6 +9943,12 @@ document.body.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && state.projectWikiTopicPickerOpen) {
     event.preventDefault();
     closeProjectWikiTopicPicker();
+    return;
+  }
+  if (event.key === 'Escape' && state.projectKnowledgeAttachProjectId) {
+    event.preventDefault();
+    state.projectKnowledgeAttachProjectId = null;
+    render();
     return;
   }
   if (event.key === 'Escape' && state.projectCreationOpen) {
