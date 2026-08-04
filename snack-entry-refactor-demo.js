@@ -1712,10 +1712,17 @@ function renderProjectGroupList(project, groups) {
       .map((name) => getProjectGroupChatDirectory(project).find((member) => member.name === name) || { name, isAgent: false });
     return `
           <article class="project-group-list-row" role="row">
-            <span class="project-group-identity">
+            <button
+              class="project-group-identity project-group-enter"
+              type="button"
+              data-project-group-enter="${escapeAttribute(project.id)}"
+              data-project-group-id="${escapeAttribute(group.id)}"
+              aria-label="进入群聊 ${escapeAttribute(group.name)}"
+            >
               <span class="project-group-icon"><i data-lucide="messages-square"></i></span>
-              <span><strong>${escapeHtml(group.name)}</strong></span>
-            </span>
+              <span class="project-group-name"><strong>${escapeHtml(group.name)}</strong></span>
+              <i class="project-group-enter-chevron" data-lucide="chevron-right"></i>
+            </button>
             <span class="project-group-participants" aria-label="${participants.length} 位群成员">
               <span class="member-avatar-stack">
                 ${participants.slice(0, 4).map((member, index) => `
@@ -1751,6 +1758,14 @@ function setProjectGroupPage(page) {
   if (nextPage === state.projectGroupPage) return;
   state.projectGroupPage = nextPage;
   render();
+}
+
+function openProjectGroup(projectId, groupId) {
+  const project = getProjectById(projectId);
+  const group = getProjectGroups(project || {}).find((item) => item.id === groupId);
+  if (!project || !group) return;
+  project.activeGroupId = group.id;
+  openProjectSession(project.id, 'group');
 }
 
 function renderProjectCollaboratorSection(project, type, members) {
@@ -6251,21 +6266,22 @@ function getIssueOwnerOptions(projectId) {
 
 function renderIssueCreationModal() {
   const projectId = getProjectById(state.issueCreationProjectId)?.id || getDefaultIssueProjectId();
-  const projects = getVisibleProjectFolders();
+  const project = getProjectById(projectId);
   const ownerOptions = getIssueOwnerOptions(projectId);
   return `
     <section class="issue-create-backdrop" data-issue-modal-backdrop role="presentation">
       <form class="issue-create-modal" data-issue-create-form role="dialog" aria-modal="true" aria-labelledby="issueCreateTitle">
         <header class="issue-create-header">
           <div class="issue-create-breadcrumb">
-            <span>任务工作台</span>
+            <span>${escapeHtml(project?.title || '未命名项目')}</span>
             <i data-lucide="chevron-right"></i>
-            <strong id="issueCreateTitle">手动创建</strong>
+            <strong id="issueCreateTitle">创建任务</strong>
           </div>
           <button class="issue-create-close" type="button" aria-label="关闭创建任务" data-issue-modal-close>
             <i data-lucide="x"></i>
           </button>
         </header>
+        <input type="hidden" name="issue-project" value="${escapeAttribute(projectId || '')}" />
         <section class="issue-create-body">
           <div class="issue-create-editor">
             <input class="issue-create-title-input" name="issue-title" data-issue-create-title maxlength="80" autocomplete="off" placeholder="任务标题" aria-label="任务标题" required />
@@ -6300,13 +6316,6 @@ function renderIssueCreationModal() {
               <i data-lucide="tag"></i>
               <span>标签</span>
               <input name="issue-tag" maxlength="20" autocomplete="off" placeholder="添加标签" aria-label="标签" />
-            </label>
-            <label class="issue-create-property issue-create-project-property">
-              <i data-lucide="folder-kanban"></i>
-              <span>项目</span>
-              <select name="issue-project" aria-label="所属项目" required>
-                ${projects.map((project) => `<option value="${escapeAttribute(project.id)}" ${project.id === projectId ? 'selected' : ''}>${escapeHtml(project.title)}</option>`).join('')}
-              </select>
             </label>
           </section>
         </section>
@@ -6405,54 +6414,33 @@ function renderProjectCreationModal() {
   const projectObjective = editingProject?.objective || '';
   return `
     <section class="project-create-backdrop" data-project-modal-backdrop role="presentation">
-      <form class="project-create-modal ${editingProject ? 'project-edit-modal' : ''}" data-project-create-form role="dialog" aria-modal="true" aria-labelledby="projectCreateTitle">
+      <form class="project-create-modal project-edit-modal" data-project-create-form role="dialog" aria-modal="true" aria-labelledby="projectCreateTitle">
         <header class="project-create-header">
           <div>
             <h2 id="projectCreateTitle">${editingProject ? '项目配置' : '新建项目'}</h2>
-            ${editingProject ? '' : '<p>填写项目名称并邀请协作成员，保存后即可进入项目看板</p>'}
           </div>
           <button class="project-create-close" type="button" aria-label="关闭${editingProject ? '项目配置' : '新建项目'}" data-project-modal-close>
             <i data-lucide="x"></i>
           </button>
         </header>
-        <section class="project-create-form-body ${editingProject ? 'project-edit-form-body' : ''}">
-          <label class="project-create-field ${editingProject ? 'project-edit-core-field project-edit-name-field' : ''}">
+        <section class="project-create-form-body project-edit-form-body">
+          <label class="project-create-field project-edit-core-field project-edit-name-field">
             <span><strong>项目名称</strong> <em>必填</em></span>
             <input name="project-name" data-project-create-name value="${escapeAttribute(projectName)}" maxlength="40" autocomplete="off" placeholder="例如：7 月吊车投放监控" required />
-            ${editingProject ? `
-              <small class="project-edit-field-meta">
-                <span>清晰、简短的名称更容易被团队识别</span>
-                <b data-project-name-count>${projectName.length}/40</b>
-              </small>
-            ` : ''}
+            <small class="project-edit-field-meta">
+              <span>清晰、简短的名称更容易被团队识别</span>
+              <b data-project-name-count>${projectName.length}/40</b>
+            </small>
           </label>
-          ${editingProject ? `
-            <label class="project-create-field project-edit-core-field project-edit-objective-field">
-              <span><strong>项目目标</strong></span>
-              <textarea name="project-objective" rows="5" maxlength="240" placeholder="描述项目目标、背景与协作规范，让 Snack 在项目内提供更准确的协助。例如：团队习惯、输出要求、完成标准等">${escapeHtml(projectObjective)}</textarea>
-              <small>这段内容会作为 Snack 理解项目和协助执行的长期上下文。</small>
-            </label>
+          <label class="project-create-field project-edit-core-field project-edit-objective-field">
+            <span><strong>项目目标</strong></span>
+            <textarea name="project-objective" rows="5" maxlength="240" placeholder="描述项目目标、背景与协作规范，让 Snack 在项目内提供更准确的协助。例如：团队习惯、输出要求、完成标准等">${escapeHtml(projectObjective)}</textarea>
+            <small>这段内容会作为 Snack 理解项目和协助执行的长期上下文。</small>
+          </label>
 
-            ${renderProjectMembersModule()}
+          ${renderProjectMembersModule()}
 
-            ${renderProjectKnowledgeModule()}
-          ` : `
-            <div class="project-create-field project-wiki-topic-field">
-              <span>云端知识 <em class="project-field-optional">可多选</em></span>
-              ${renderProjectWikiTopicPicker()}
-              <small>可选择语雀空间或已经构建好的 LLM Wiki。</small>
-            </div>
-            <div class="project-create-field project-source-folder-field">
-              <span>项目文件夹 <em class="project-field-optional">可选</em></span>
-              ${renderProjectFolderPicker()}
-              <small>选择后，Snack 可读取文件夹内容并在项目内协助编辑。</small>
-            </div>
-            <div class="project-create-field">
-              <span>邀请成员</span>
-              ${renderProjectMemberPicker()}
-              <small>你和 Snack 会自动加入项目，受邀成员会显示在看板与项目群中。</small>
-            </div>
-          `}
+          ${renderProjectKnowledgeModule()}
         </section>
         <footer class="project-create-footer">
           <button class="secondary-button" type="button" data-project-modal-close>取消</button>
@@ -7049,7 +7037,7 @@ function renderProjectMemberPicker() {
   const selectedMembers = state.projectCreationMembers || [];
   const selectedNames = new Set(selectedMembers.map((member) => member.name));
   const query = state.projectMemberQuery.trim().toLowerCase();
-  const grouped = Boolean(state.projectEditingId);
+  const grouped = state.projectCreationOpen;
   const activeType = state.projectMemberPickerType === 'agent' ? 'agent' : 'human';
   const options = getProjectMemberDirectory()
     .filter((member) => !selectedNames.has(member.name))
@@ -7224,7 +7212,7 @@ function getProjectMemberDirectory() {
 
 function refreshProjectMemberPicker(options = {}) {
   const module = document.querySelector('[data-project-members-module]');
-  if (module instanceof HTMLElement && state.projectEditingId) {
+  if (module instanceof HTMLElement) {
     module.outerHTML = renderProjectMembersModule();
     renderIcons();
     if (options.focusSearch) syncProjectMemberSearchFocus();
@@ -7283,12 +7271,7 @@ function selectProjectMember(name) {
 
 function removeProjectMember(name) {
   state.projectCreationMembers = state.projectCreationMembers.filter((member) => member.name !== name);
-  if (state.projectEditingId) {
-    refreshProjectMemberPicker({ focusSearch: state.projectMemberPickerOpen });
-    return;
-  }
-  state.projectMemberPickerOpen = true;
-  refreshProjectMemberPicker({ focusSearch: true });
+  refreshProjectMemberPicker({ focusSearch: state.projectMemberPickerOpen });
 }
 
 function createNewProject(form) {
@@ -7386,9 +7369,10 @@ function createNewProject(form) {
   project.pushRule = pushRule;
   state.projectSerial += 1;
   projectFolders.unshift(project);
-  state.collapsedProjects = [...new Set([...state.collapsedProjects, projectId])];
+  state.collapsedProjects = state.collapsedProjects.filter((id) => id !== projectId);
   state.projectCreationOpen = false;
   state.projectEditingId = null;
+  state.projectCreationMembers = [];
   state.projectCreationWikiTopics = [];
   state.projectWikiTopicPickerOpen = false;
   state.projectKnowledgeEditorOpen = false;
@@ -7924,6 +7908,7 @@ function openProject(projectId) {
 function openProjectSession(projectId, sessionId) {
   const project = getProjectById(projectId);
   const session = project?.sessions.find((item) => item.id === sessionId);
+  state.collapsedProjects = state.collapsedProjects.filter((id) => id !== projectId);
   state.openProjectMenuId = null;
   state.openProjectCreateMenuId = null;
   state.modelPickerOpen = false;
@@ -9177,7 +9162,7 @@ function handleBodyClick(event) {
   if (state.projectMemberPickerOpen && !clickedInsideMemberPicker) closeProjectMemberPicker();
   const clickedInsideWikiTopicPicker = event.target.closest('[data-project-wiki-topic-picker]');
   if (state.projectWikiTopicPickerOpen && !clickedInsideWikiTopicPicker) closeProjectWikiTopicPicker();
-  const target = event.target.closest('[data-view], [data-create-project], [data-project-config], [data-project-detail-sidebar], [data-project-detail-tab], [data-project-modal-close], [data-project-modal-backdrop], [data-project-group-chat-open], [data-project-group-chat-close], [data-project-group-chat-backdrop], [data-project-group-chat-filter], [data-project-group-chat-option], [data-project-group-chat-complete], [data-project-group-action], [data-project-group-page], [data-project-group-modal-close], [data-project-group-modal-backdrop], [data-project-group-modal-action], [data-project-collaborator-manager], [data-project-collaborator-add], [data-project-collaborator-option], [data-create-issue], [data-issue-modal-close], [data-issue-modal-backdrop], [data-project-folder-remove], [data-project-wiki-topic-toggle], [data-project-wiki-topic-option], [data-project-knowledge-add], [data-project-members-add], [data-project-member-picker], [data-project-member-add], [data-project-member-search], [data-project-member-option], [data-project-member-remove], [data-snack-desktop-download], [data-monitoring-rule-recognize], [data-monitoring-rule-edit], [data-monitoring-rule-remove], [data-project-intake-submit], [data-meeting-intake-submit], [data-mock-action], [data-confirmation-action], [data-confirmation-cancel], [data-model-menu], [data-model-select], [data-project-picker], [data-project-context], [data-project-context-empty], [data-project-picker-search], [data-agent-status-toggle], [data-task-tab], [data-task-filter], [data-project-board-tab], [data-issue-tab], [data-close-issue-tab], [data-todo-inbox-issue], [data-issue-id], [data-log-doc], [data-close-log-doc], [data-project-open], [data-project-toggle], [data-project-sessions], [data-project-session], [data-project-menu], [data-project-action], [data-project-create-menu], [data-project-create-action], [data-loose-session], [data-board-sidebar], [data-member-sidebar], [data-member-tab], [data-member-manager-toggle], [data-member-manager-add], [data-member-manager-remove], [data-agent-tab], [data-agent-chat], [data-agent-menu], [data-agent-select], [data-resource-tab], [data-toast]');
+  const target = event.target.closest('[data-view], [data-create-project], [data-project-config], [data-project-detail-sidebar], [data-project-detail-tab], [data-project-modal-close], [data-project-modal-backdrop], [data-project-group-chat-open], [data-project-group-chat-close], [data-project-group-chat-backdrop], [data-project-group-chat-filter], [data-project-group-chat-option], [data-project-group-chat-complete], [data-project-group-enter], [data-project-group-action], [data-project-group-page], [data-project-group-modal-close], [data-project-group-modal-backdrop], [data-project-group-modal-action], [data-project-collaborator-manager], [data-project-collaborator-add], [data-project-collaborator-option], [data-create-issue], [data-issue-modal-close], [data-issue-modal-backdrop], [data-project-folder-remove], [data-project-wiki-topic-toggle], [data-project-wiki-topic-option], [data-project-knowledge-add], [data-project-members-add], [data-project-member-picker], [data-project-member-add], [data-project-member-search], [data-project-member-option], [data-project-member-remove], [data-snack-desktop-download], [data-monitoring-rule-recognize], [data-monitoring-rule-edit], [data-monitoring-rule-remove], [data-project-intake-submit], [data-meeting-intake-submit], [data-mock-action], [data-confirmation-action], [data-confirmation-cancel], [data-model-menu], [data-model-select], [data-project-picker], [data-project-context], [data-project-context-empty], [data-project-picker-search], [data-agent-status-toggle], [data-task-tab], [data-task-filter], [data-project-board-tab], [data-issue-tab], [data-close-issue-tab], [data-todo-inbox-issue], [data-issue-id], [data-log-doc], [data-close-log-doc], [data-project-open], [data-project-toggle], [data-project-sessions], [data-project-session], [data-project-menu], [data-project-action], [data-project-create-menu], [data-project-create-action], [data-loose-session], [data-board-sidebar], [data-member-sidebar], [data-member-tab], [data-member-manager-toggle], [data-member-manager-add], [data-member-manager-remove], [data-agent-tab], [data-agent-chat], [data-agent-menu], [data-agent-select], [data-resource-tab], [data-toast]');
   if (!target) {
     if (state.openProjectMenuId || state.openProjectCreateMenuId || state.modelPickerOpen || state.projectPickerOpen) {
       state.openProjectMenuId = null;
@@ -9233,6 +9218,7 @@ function handleBodyClick(event) {
     return;
   }
   if (target.dataset.projectGroupChatOpen) return openProjectGroupChat(target.dataset.projectGroupChatOpen);
+  if (target.dataset.projectGroupEnter) return openProjectGroup(target.dataset.projectGroupEnter, target.dataset.projectGroupId);
   if (target.dataset.projectGroupAction) return runProjectGroupAction(target.dataset.projectGroupAction, target.dataset.projectGroupId);
   if (target.dataset.projectGroupPage) return setProjectGroupPage(target.dataset.projectGroupPage);
   if (target.dataset.projectGroupChatFilter) {

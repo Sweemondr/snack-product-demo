@@ -2818,6 +2818,9 @@ body.conversation-dragging {
   display: flex;
   align-items: center;
   gap: 11px;
+  color: inherit;
+  background: transparent;
+  text-align: left;
 }
 .project-group-icon {
   width: 36px;
@@ -2834,9 +2837,10 @@ body.conversation-dragging {
   width: 17px;
   height: 17px;
 }
-.project-group-identity > span:last-child {
+.project-group-name {
   min-width: 0;
   display: grid;
+  flex: 1;
   gap: 4px;
 }
 .project-group-identity strong {
@@ -2847,6 +2851,18 @@ body.conversation-dragging {
 .project-group-identity strong {
   color: #1e293b;
   font-size: 14px;
+}
+.project-group-enter-chevron {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 auto;
+  color: #a1aab8;
+  transition: color 150ms ease, transform 150ms ease;
+}
+.project-group-enter:hover .project-group-enter-chevron,
+.project-group-enter:focus-visible .project-group-enter-chevron {
+  color: #c2410c;
+  transform: translateX(2px);
 }
 .project-group-list-row time {
   color: #64748b;
@@ -6070,9 +6086,6 @@ body.conversation-dragging {
 }
 .issue-create-tag-property input {
   width: 92px;
-}
-.issue-create-project-property select {
-  max-width: 220px;
 }
 .issue-create-property input::placeholder {
   color: var(--muted);
