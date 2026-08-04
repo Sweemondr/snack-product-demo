@@ -86,6 +86,9 @@ const state = {
   localKnowledgeShareProjectIds: [],
   projectAssetShareOpen: null,
   projectKnowledgeAttachProjectId: null,
+  sidebarCollapsed: false,
+  sidebarSearchOpen: false,
+  sidebarSearchQuery: '',
   selectedAgent: 'Snack',
   agentMenuOpen: false,
   logDocIssue: null,
@@ -114,6 +117,10 @@ const state = {
   renamingProjectId: null,
   openProjectMenuId: null,
   openProjectCreateMenuId: null,
+  openSidebarGroupMenuKey: null,
+  groupHeaderMenuOpen: false,
+  groupSearchOpen: false,
+  groupSearchQuery: '',
   selectedModel: 'snack-5-5-ultra',
   modelPickerOpen: false,
   composerProjectId: 'snack-product-iteration',
@@ -928,6 +935,10 @@ const topbar = document.querySelector('.topbar');
 const topbarActions = document.querySelector('#topbarActions');
 const projectHistory = document.querySelector('#projectHistory');
 const toast = document.querySelector('#toast');
+const sidebarShell = document.querySelector('[data-sidebar]');
+const sidebarSearchPanel = document.querySelector('[data-sidebar-search-panel]');
+const sidebarSearchInput = document.querySelector('[data-sidebar-search-input]');
+const sidebarSearchResults = document.querySelector('[data-sidebar-search-results]');
 const meetingDemoControls = document.querySelector('#meetingDemoControls');
 
 function setView(view) {
@@ -1014,6 +1025,88 @@ function syncEntryNav() {
         : state.view;
     node.classList.toggle('active', node.dataset.view === navView);
   });
+}
+
+function setSidebarCollapsed(collapsed) {
+  state.sidebarCollapsed = Boolean(collapsed);
+  if (sidebarShell instanceof HTMLElement) sidebarShell.classList.toggle('collapsed', state.sidebarCollapsed);
+  document.querySelectorAll('[data-sidebar-collapse-toggle]').forEach((button) => {
+    if (!(button instanceof HTMLButtonElement)) return;
+    const label = state.sidebarCollapsed ? '展开侧边栏' : '收起侧边栏';
+    button.setAttribute('aria-label', label);
+    button.title = label;
+  });
+  if (state.sidebarCollapsed) setSidebarSearchOpen(false);
+}
+
+function setSidebarSearchOpen(open) {
+  const nextOpen = Boolean(open);
+  if (nextOpen && state.sidebarCollapsed) setSidebarCollapsed(false);
+  state.sidebarSearchOpen = nextOpen;
+  if (sidebarSearchPanel instanceof HTMLElement) sidebarSearchPanel.hidden = !nextOpen;
+  if (!nextOpen) {
+    state.sidebarSearchQuery = '';
+    if (sidebarSearchInput instanceof HTMLInputElement) sidebarSearchInput.value = '';
+    renderSidebarSearchResults();
+    return;
+  }
+  renderSidebarSearchResults();
+  window.requestAnimationFrame(() => {
+    if (sidebarSearchInput instanceof HTMLInputElement) sidebarSearchInput.focus();
+  });
+}
+
+function getSidebarSearchEntries(query) {
+  const entries = [];
+  getVisibleProjectFolders().forEach((project) => {
+    entries.push({
+      title: project.title,
+      meta: '项目',
+      icon: 'folder',
+      attributes: `data-project-open="${escapeAttribute(project.id)}"`,
+    });
+    getProjectGroups(project).forEach((group) => entries.push({
+      title: group.name || '未命名群聊',
+      meta: `${project.title} · 群聊`,
+      icon: 'users-round',
+      attributes: `data-project-group-enter="${escapeAttribute(project.id)}" data-project-group-id="${escapeAttribute(group.id)}"`,
+    }));
+    (project.sessions || []).forEach((session) => entries.push({
+      title: session.title,
+      meta: `${project.title} · 会话`,
+      icon: session.icon || 'message-square',
+      attributes: `data-project-session="${escapeAttribute(project.id)}:${escapeAttribute(session.id)}"`,
+    }));
+  });
+  getSortedLooseSessions().forEach((session) => entries.push({
+    title: session.title,
+    meta: '对话',
+    icon: 'message-square',
+    attributes: `data-loose-session="${escapeAttribute(session.id)}"`,
+  }));
+  if (!query) return [];
+  return entries
+    .filter((entry) => `${entry.title} ${entry.meta}`.toLocaleLowerCase('zh-CN').includes(query))
+    .slice(0, 12);
+}
+
+function renderSidebarSearchResults() {
+  if (!(sidebarSearchResults instanceof HTMLElement)) return;
+  const query = state.sidebarSearchQuery.trim().toLocaleLowerCase('zh-CN');
+  const entries = getSidebarSearchEntries(query);
+  if (!query) {
+    sidebarSearchResults.innerHTML = '<p>输入关键词开始搜索</p>';
+    return;
+  }
+  sidebarSearchResults.innerHTML = entries.length
+    ? entries.map((entry) => `
+        <button class="sidebar-search-result" type="button" ${entry.attributes}>
+          <i data-lucide="${entry.icon}"></i>
+          <span><strong>${escapeHtml(entry.title)}</strong><small>${escapeHtml(entry.meta)}</small></span>
+        </button>
+      `).join('')
+    : '<p>没有找到匹配的项目、群聊或会话</p>';
+  renderIcons();
 }
 
 function getSecondaryTabs() {
@@ -1152,14 +1245,17 @@ function renderProjectMoreMenu(project) {
 
 function renderProjectSessions(project) {
   const boardActive = state.view === 'projectBoard' && state.activeProject === project.id;
-  const groupSessions = getProjectGroups(project).map((group) => ({
+  const groupSessions = [...getProjectGroups(project)]
+    .sort((a, b) => Number(b.pinnedAt || 0) - Number(a.pinnedAt || 0))
+    .map((group) => ({
     id: `team-chat-${group.id}`,
     groupId: group.id,
     kind: 'team-chat',
     title: group.name || '未命名群聊',
     participants: group.participants || [],
+    notificationsMuted: Boolean(group.notificationsMuted),
     updated: '',
-    pinned: true,
+    pinned: Boolean(group.pinnedAt),
     active: state.view === 'project'
       && state.activeProject === project.id
       && state.activeSession === 'group'
@@ -1188,17 +1284,70 @@ function renderProjectSessions(project) {
 }
 
 function renderHistorySession(project, session) {
-  const movable = !session.pinned;
   const isTeamChat = session.kind === 'team-chat';
+  const movable = !isTeamChat;
   const navigationAttributes = isTeamChat
     ? `data-project-group-enter="${escapeAttribute(project.id)}" data-project-group-id="${escapeAttribute(session.groupId)}"`
     : `data-project-session="${project.id}:${session.id}"`;
+  if (isTeamChat) {
+    const menuKey = `${project.id}:${session.groupId}`;
+    const menuOpen = state.openSidebarGroupMenuKey === menuKey;
+    return `
+      <div class="history-session team-chat-session ${session.pinned ? 'pinned' : ''} ${session.active ? 'active' : ''} ${menuOpen ? 'menu-open' : ''}">
+        <button class="history-team-chat-main" type="button" ${navigationAttributes} title="进入群聊">
+          ${renderSidebarGroupAvatarStack(project, session)}
+          <span>${escapeHtml(session.title)}</span>
+          ${session.notificationsMuted ? '<i class="history-team-chat-muted" data-lucide="bell-off" aria-label="已开启免打扰"></i>' : ''}
+          ${session.pinned ? '<i class="history-team-chat-pinned" data-lucide="pin" aria-label="已置顶"></i>' : ''}
+        </button>
+        <span class="history-team-chat-menu-wrap">
+          <button
+            class="history-team-chat-menu-trigger ${menuOpen ? 'active' : ''}"
+            type="button"
+            data-sidebar-group-menu="${escapeAttribute(menuKey)}"
+            aria-label="${escapeAttribute(session.title)} 更多操作"
+            aria-expanded="${menuOpen ? 'true' : 'false'}"
+          >
+            <i data-lucide="ellipsis"></i>
+          </button>
+          ${menuOpen ? renderSidebarGroupMenu(project, session) : ''}
+        </span>
+      </div>
+    `;
+  }
   return `
-    <button class="history-session ${isTeamChat ? 'team-chat-session' : ''} ${session.pinned ? 'pinned' : ''} ${session.active ? 'active' : ''}" ${navigationAttributes} ${movable ? `draggable="true" data-conversation-origin="project" data-conversation-id="${session.id}" data-conversation-project="${project.id}" title="拖拽可移动到其他项目或移出项目"` : ''}>
-      ${isTeamChat ? renderSidebarGroupAvatarStack(project, session) : `<i data-lucide="${session.icon || (session.pinned ? 'messages-square' : 'message-square')}"></i>`}
-      <span>${session.title}</span>
+    <button class="history-session ${session.pinned ? 'pinned' : ''} ${session.active ? 'active' : ''}" ${navigationAttributes} ${movable ? `draggable="true" data-conversation-origin="project" data-conversation-id="${session.id}" data-conversation-project="${project.id}" title="拖拽可移动到其他项目或移出项目"` : ''}>
+      <i data-lucide="${session.icon || (session.pinned ? 'messages-square' : 'message-square')}"></i>
+      <span>${escapeHtml(session.title)}</span>
       ${session.updated ? `<small>${session.updated}</small>` : ''}
     </button>
+  `;
+}
+
+function renderSidebarGroupMenu(project, session) {
+  return `
+    <div class="sidebar-group-more-menu" role="menu" aria-label="${escapeAttribute(session.title)} 更多操作">
+      <button type="button" role="menuitem" data-sidebar-group-action="pin" data-project-id="${escapeAttribute(project.id)}" data-project-group-id="${escapeAttribute(session.groupId)}">
+        <i data-lucide="${session.pinned ? 'pin-off' : 'pin'}"></i>
+        <span>${session.pinned ? '取消置顶' : '置顶'}</span>
+      </button>
+      <button type="button" role="menuitem" data-sidebar-group-action="mute" data-project-id="${escapeAttribute(project.id)}" data-project-group-id="${escapeAttribute(session.groupId)}">
+        <i data-lucide="${session.notificationsMuted ? 'bell' : 'bell-off'}"></i>
+        <span>${session.notificationsMuted ? '恢复通知' : '免打扰通知'}</span>
+      </button>
+      <button type="button" role="menuitem" data-sidebar-group-action="new-group" data-project-id="${escapeAttribute(project.id)}" data-project-group-id="${escapeAttribute(session.groupId)}">
+        <i data-lucide="circle-plus"></i>
+        <span>发起群聊</span>
+      </button>
+      <button type="button" role="menuitem" data-sidebar-group-action="rename" data-project-id="${escapeAttribute(project.id)}" data-project-group-id="${escapeAttribute(session.groupId)}">
+        <i data-lucide="pencil"></i>
+        <span>重命名</span>
+      </button>
+      <button class="danger" type="button" role="menuitem" data-sidebar-group-action="delete" data-project-id="${escapeAttribute(project.id)}" data-project-group-id="${escapeAttribute(session.groupId)}">
+        <i data-lucide="trash-2"></i>
+        <span>删除</span>
+      </button>
+    </div>
   `;
 }
 
@@ -1206,14 +1355,14 @@ function renderSidebarGroupAvatarStack(project, session) {
   const directory = new Map(getProjectGroupChatDirectory(project).map((member) => [member.name, member]));
   const members = (session.participants || [])
     .map((name) => directory.get(name) || { name, isAgent: name === 'Snack' || name.endsWith('Agent') })
-    .slice(0, 3);
+    .slice(0, 4);
   if (!members.length) {
     return '<span class="history-team-avatar-stack empty"><i data-lucide="users-round"></i></span>';
   }
   return `
-    <span class="history-team-avatar-stack" aria-hidden="true">
+    <span class="history-team-avatar-stack count-${members.length}" aria-label="群聊成员">
       ${members.map((member, index) => `
-        <span class="history-team-avatar ${member.isAgent ? 'agent' : 'human'}" style="--avatar-index:${index}" title="${escapeAttribute(member.name)}">
+        <span class="history-team-avatar ${member.isAgent ? 'agent' : 'human'}" title="${escapeAttribute(member.name)}">
           ${escapeHtml(member.name.slice(0, 1))}
         </span>
       `).join('')}
@@ -1763,26 +1912,14 @@ function renderProjectGroupList(project, groups) {
       .map((name) => getProjectGroupChatDirectory(project).find((member) => member.name === name) || { name, isAgent: false });
     return `
           <article class="project-group-list-row" role="row">
-            <button
-              class="project-group-identity project-group-enter"
-              type="button"
-              data-project-group-enter="${escapeAttribute(project.id)}"
-              data-project-group-id="${escapeAttribute(group.id)}"
-              aria-label="进入群聊 ${escapeAttribute(group.name)}"
-            >
-              <span class="project-group-icon"><i data-lucide="messages-square"></i></span>
+            <span class="project-group-identity">
               <span class="project-group-name"><strong>${escapeHtml(group.name)}</strong></span>
-              <i class="project-group-enter-chevron" data-lucide="chevron-right"></i>
-            </button>
+            </span>
             <span class="project-group-participants" aria-label="${participants.length} 位群成员">
-              <span class="member-avatar-stack">
-                ${participants.slice(0, 4).map((member, index) => `
-                  <span class="member-stack-avatar ${member.isAgent ? 'agent' : 'human'}" style="--stack-index:${index}" title="${escapeAttribute(member.name)}">${escapeHtml(member.name.slice(0, 1))}</span>
-                `).join('')}
-              </span>
+              <button type="button" data-project-group-action="members" data-project-group-id="${escapeAttribute(group.id)}" aria-label="查看 ${participants.length} 位成员">查看 ${participants.length} 位成员</button>
             </span>
             <span class="project-group-row-actions">
-              <button type="button" data-project-group-action="members" data-project-group-id="${escapeAttribute(group.id)}"><i data-lucide="users-round"></i><span>人员管理</span></button>
+              <button type="button" data-project-group-enter="${escapeAttribute(project.id)}" data-project-group-id="${escapeAttribute(group.id)}"><i data-lucide="message-square-text"></i><span>去对话</span></button>
               <button type="button" data-project-group-action="rename" data-project-group-id="${escapeAttribute(group.id)}"><i data-lucide="pencil-line"></i><span>修改名称</span></button>
               <button type="button" data-project-group-action="share" data-project-group-id="${escapeAttribute(group.id)}"><i data-lucide="share-2"></i><span>分享</span></button>
               <button class="danger" type="button" data-project-group-action="dissolve" data-project-group-id="${escapeAttribute(group.id)}"><i data-lucide="trash-2"></i><span>解散</span></button>
@@ -1816,6 +1953,9 @@ function openProjectGroup(projectId, groupId) {
   const group = getProjectGroups(project || {}).find((item) => item.id === groupId);
   if (!project || !group) return;
   project.activeGroupId = group.id;
+  state.groupHeaderMenuOpen = false;
+  state.groupSearchOpen = false;
+  state.groupSearchQuery = '';
   openProjectSession(project.id, 'group');
 }
 
@@ -2364,14 +2504,20 @@ function completeProjectGroupChat() {
 }
 
 function getActiveProjectGroup(groupId) {
-  const project = getActiveProject();
+  return getProjectGroupContext(state.activeProject, groupId);
+}
+
+function getProjectGroupContext(projectId, groupId) {
+  const project = getProjectById(projectId);
   const group = getProjectGroups(project || {}).find((item) => item.id === groupId);
   return project && group ? { project, group } : null;
 }
 
 function renderProjectGroupActionModal() {
   const modal = state.projectGroupActionModal;
-  const context = getActiveProjectGroup(modal?.groupId);
+  const context = modal?.projectId
+    ? getProjectGroupContext(modal.projectId, modal.groupId)
+    : getActiveProjectGroup(modal?.groupId);
   if (!modal || !context) return '';
   const { project, group } = context;
   const shareUrl = `https://snack.mechlabs.cn/share/team/${encodeURIComponent(group.id)}`;
@@ -2422,7 +2568,9 @@ function closeProjectGroupActionModal() {
 
 function handleProjectGroupModalAction(action) {
   const modal = state.projectGroupActionModal;
-  const context = getActiveProjectGroup(modal?.groupId);
+  const context = modal?.projectId
+    ? getProjectGroupContext(modal.projectId, modal.groupId)
+    : getActiveProjectGroup(modal?.groupId);
   if (!modal || !context) return;
   const { project, group } = context;
   if (action === 'copy-link') {
@@ -2470,6 +2618,44 @@ function runProjectGroupAction(action, groupId) {
   }
   if (['rename', 'share', 'dissolve'].includes(action)) {
     state.projectGroupActionModal = { type: action, groupId: group.id };
+    render();
+  }
+}
+
+function toggleSidebarGroupMenu(menuKey) {
+  state.openProjectMenuId = null;
+  state.openProjectCreateMenuId = null;
+  state.openSidebarGroupMenuKey = state.openSidebarGroupMenuKey === menuKey ? null : menuKey;
+  render();
+}
+
+function runSidebarGroupAction(action, projectId, groupId) {
+  const context = getProjectGroupContext(projectId, groupId);
+  if (!context) return;
+  const { group } = context;
+  state.openSidebarGroupMenuKey = null;
+  if (action === 'pin') {
+    group.pinnedAt = group.pinnedAt ? null : Date.now();
+    render();
+    showToast(group.pinnedAt ? '群聊已置顶' : '已取消置顶');
+    return;
+  }
+  if (action === 'mute') {
+    group.notificationsMuted = !group.notificationsMuted;
+    render();
+    showToast(group.notificationsMuted ? '已开启免打扰通知' : '已恢复群聊通知');
+    return;
+  }
+  if (action === 'new-group') {
+    openProjectGroupChat(projectId);
+    return;
+  }
+  if (action === 'rename' || action === 'delete') {
+    state.projectGroupActionModal = {
+      type: action === 'delete' ? 'dissolve' : 'rename',
+      projectId,
+      groupId,
+    };
     render();
   }
 }
@@ -3792,30 +3978,114 @@ function renderProjectConversation(project) {
   const messages = getSessionMessages(project, session);
   const sideOpen = isGroup && (state.boardSidebarOpen || state.memberSidebarOpen);
   return `
-    <section class="project-chat-shell ${sideOpen ? 'side-open' : ''} ${state.boardSidebarOpen && isGroup ? 'board-open' : ''}">
+    <section class="project-chat-shell ${isGroup ? 'group-chat-shell' : ''} ${sideOpen ? 'side-open' : ''} ${state.boardSidebarOpen && isGroup ? 'board-open' : ''}">
       <section class="project-chat-main">
-        <header class="project-chat-header">
+        <header class="project-chat-header ${isGroup ? 'group-chat-detail-header' : ''}">
           <div class="project-chat-title">
             <span>
-              <h2>${headerTitle}</h2>
+              <h2>${escapeHtml(headerTitle)}</h2>
               ${isGroup ? '' : `<small>${session.with}</small>`}
             </span>
           </div>
-          ${isGroup ? `<div class="group-header-actions">${renderGroupMembersButton(project)}${renderMiniBoard(project)}</div>` : ''}
+          ${isGroup ? renderGroupHeaderActions(project) : ''}
         </header>
+        ${isGroup && state.groupSearchOpen ? renderGroupSearchPanel(messages) : ''}
         <section class="chat-thread">
-          ${messages.map(renderChatMessage).join('')}
+          ${isGroup
+    ? `<div class="group-chat-content">${messages.map(renderChatMessage).join('')}</div>`
+    : messages.map(renderChatMessage).join('')}
         </section>
-        ${renderComposer({
-          project,
-          session,
-          placeholder: isGroup ? '询问进展、同步结论或 @ 成员...' : '继续对齐项目上下文...',
-        })}
+        ${isGroup ? `
+          <div class="group-chat-composer-region">
+            ${renderComposer({ project, session, placeholder: '可以发送消息或 @智能体员工' })}
+            <p class="group-chat-footer-hint">Snack 也可能会犯错。请检查重要信息。你的个人 Snack 记忆绝不会在群聊中使用。</p>
+          </div>
+        ` : renderComposer({ project, session, placeholder: '继续对齐项目上下文...' })}
       </section>
       ${isGroup && state.boardSidebarOpen ? renderProjectBoardDrawer(project) : ''}
       ${isGroup && state.memberSidebarOpen ? renderGroupMemberDrawer(project) : ''}
     </section>
   `;
+}
+
+function getActiveGroup(project) {
+  return getProjectGroups(project).find((group) => group.id === project.activeGroupId)
+    || getProjectGroups(project)[0]
+    || null;
+}
+
+function renderGroupHeaderActions(project) {
+  const group = getActiveGroup(project);
+  if (!group) return '';
+  return `
+    <div class="group-header-actions">
+      ${renderGroupMembersButton(project)}
+      <button class="group-header-icon-button ${state.groupSearchOpen ? 'active' : ''}" type="button" data-group-header-search aria-label="搜索消息" title="搜索消息">
+        <i data-lucide="search"></i>
+      </button>
+      <span class="group-header-menu-wrap">
+        <button class="group-header-icon-button ${state.groupHeaderMenuOpen ? 'active' : ''}" type="button" data-group-header-menu aria-label="群组更多操作" title="群组更多操作" aria-expanded="${state.groupHeaderMenuOpen ? 'true' : 'false'}">
+          <i data-lucide="ellipsis"></i>
+        </button>
+        ${state.groupHeaderMenuOpen ? renderGroupHeaderMenu(project, group) : ''}
+      </span>
+    </div>
+  `;
+}
+
+function renderGroupHeaderMenu(project, group) {
+  return `
+    <div class="group-header-more-menu" role="menu" aria-label="群组更多操作">
+      <button type="button" role="menuitem" data-group-header-action="members" data-project-id="${escapeAttribute(project.id)}" data-project-group-id="${escapeAttribute(group.id)}"><i data-lucide="users"></i><span>人员管理</span></button>
+      <button type="button" role="menuitem" data-group-header-action="share" data-project-id="${escapeAttribute(project.id)}" data-project-group-id="${escapeAttribute(group.id)}"><i data-lucide="share-2"></i><span>分享群组</span></button>
+      <button type="button" role="menuitem" data-group-header-action="rename" data-project-id="${escapeAttribute(project.id)}" data-project-group-id="${escapeAttribute(group.id)}"><i data-lucide="square-pen"></i><span>重命名群组</span></button>
+      <button type="button" role="menuitem" data-group-header-action="custom-snack" data-project-id="${escapeAttribute(project.id)}" data-project-group-id="${escapeAttribute(group.id)}"><i data-lucide="sliders-horizontal"></i><span>自定义Snack</span></button>
+      <button class="danger" type="button" role="menuitem" data-group-header-action="delete" data-project-id="${escapeAttribute(project.id)}" data-project-group-id="${escapeAttribute(group.id)}"><i data-lucide="trash-2"></i><span>删除群聊</span></button>
+    </div>
+  `;
+}
+
+function renderGroupSearchPanel(messages) {
+  const query = state.groupSearchQuery.trim().toLowerCase();
+  return `
+    <section class="group-chat-search-panel" aria-label="搜索群内消息">
+      <header>
+        <label><i data-lucide="search"></i><input type="search" value="${escapeAttribute(state.groupSearchQuery)}" data-group-search-input placeholder="搜索群内消息" autocomplete="off" /></label>
+        <button type="button" data-group-header-search aria-label="关闭搜索"><i data-lucide="x"></i></button>
+      </header>
+      <div class="group-chat-search-results" data-group-search-results>
+        ${renderGroupSearchResultsMarkup(messages, query)}
+      </div>
+    </section>
+  `;
+}
+
+function renderGroupSearchResultsMarkup(messages, query = state.groupSearchQuery.trim().toLowerCase()) {
+  if (!query) return '<p>输入关键词开始搜索</p>';
+  const matches = messages.filter((message) => `${message[0]} ${message[1]}`.toLowerCase().includes(query));
+  if (!matches.length) return '<p>未找到匹配消息</p>';
+  return matches.map((message) => `
+    <article>
+      <span>${escapeHtml(message[0].slice(0, 1))}</span>
+      <div><header><strong>${escapeHtml(message[0])}</strong><small>${escapeHtml(message[2])}</small></header><p>${escapeHtml(message[1])}</p></div>
+    </article>
+  `).join('');
+}
+
+function refreshGroupSearchResults() {
+  const project = getActiveProject();
+  const results = document.querySelector('[data-group-search-results]');
+  if (!project || !(results instanceof HTMLElement)) return;
+  results.innerHTML = renderGroupSearchResultsMarkup(getSessionMessages(project, { id: 'group' }));
+}
+
+function syncGroupSearchFocus() {
+  window.setTimeout(() => {
+    const input = document.querySelector('[data-group-search-input]');
+    if (!(input instanceof HTMLInputElement)) return;
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+  }, 0);
 }
 
 function renderProjectIntake(project) {
@@ -3838,17 +4108,56 @@ function renderProjectIntake(project) {
 }
 
 function renderGroupMembersButton(project) {
-  const members = getProjectCollaborators(project);
+  const group = getActiveGroup(project);
+  const directory = new Map(getProjectGroupChatDirectory(project).map((member) => [member.name, member]));
+  const members = (group?.participants || [])
+    .map((name) => directory.get(name) || { name, isAgent: name === 'Snack' || name.endsWith('Agent') });
   return `
     <button class="group-members-button ${state.memberSidebarOpen ? 'active' : ''}" data-member-sidebar="${state.memberSidebarOpen ? 'close' : 'open'}" aria-label="查看群成员">
       <span class="member-avatar-stack">
-        ${members.slice(0, 3).map((member, index) => `
+        ${members.slice(0, 4).map((member, index) => `
           <span class="member-stack-avatar ${member.isAgent ? 'agent' : 'human'}" style="--stack-index:${index}">${escapeHtml(member.name.slice(0, 1))}</span>
         `).join('')}
       </span>
       <strong>${members.length}</strong>
     </button>
   `;
+}
+
+function toggleGroupHeaderSearch() {
+  state.groupSearchOpen = !state.groupSearchOpen;
+  state.groupHeaderMenuOpen = false;
+  if (!state.groupSearchOpen) state.groupSearchQuery = '';
+  render();
+  if (state.groupSearchOpen) syncGroupSearchFocus();
+}
+
+function toggleGroupHeaderMenu() {
+  state.groupHeaderMenuOpen = !state.groupHeaderMenuOpen;
+  render();
+}
+
+function runGroupHeaderAction(action, projectId, groupId) {
+  const context = getProjectGroupContext(projectId, groupId);
+  if (!context) return;
+  state.groupHeaderMenuOpen = false;
+  if (action === 'members') {
+    openProjectGroupChat(projectId, groupId);
+    return;
+  }
+  if (action === 'custom-snack') {
+    render();
+    showToast('自定义 Snack 设置入口为模拟交互');
+    return;
+  }
+  if (['share', 'rename', 'delete'].includes(action)) {
+    state.projectGroupActionModal = {
+      type: action === 'delete' ? 'dissolve' : action,
+      projectId,
+      groupId,
+    };
+    render();
+  }
 }
 
 function renderAgentWorkStatus(project) {
@@ -9895,6 +10204,82 @@ function renderIcons() {
 
 function handleBodyClick(event) {
   if (!(event.target instanceof Element)) return;
+  const sidebarControlTarget = event.target.closest('[data-sidebar-search-toggle], [data-sidebar-search-close], [data-sidebar-collapse-toggle], [data-sidebar-group-chat]');
+  if (sidebarControlTarget) {
+    if (sidebarControlTarget.dataset.sidebarSearchToggle !== undefined) {
+      setSidebarSearchOpen(!state.sidebarSearchOpen);
+      return;
+    }
+    if (sidebarControlTarget.dataset.sidebarSearchClose !== undefined) {
+      setSidebarSearchOpen(false);
+      return;
+    }
+    if (sidebarControlTarget.dataset.sidebarCollapseToggle !== undefined) {
+      setSidebarCollapsed(!state.sidebarCollapsed);
+      return;
+    }
+    const project = getActiveProject() || getVisibleProjectFolders()[0];
+    if (project) openProjectGroupChat(project.id);
+    else showToast('请先创建一个项目');
+    return;
+  }
+  const sidebarSearchResult = event.target.closest('.sidebar-search-result');
+  if (sidebarSearchResult) {
+    const projectId = sidebarSearchResult.dataset.projectOpen;
+    const groupProjectId = sidebarSearchResult.dataset.projectGroupEnter;
+    const groupId = sidebarSearchResult.dataset.projectGroupId;
+    const projectSession = sidebarSearchResult.dataset.projectSession;
+    const looseSession = sidebarSearchResult.dataset.looseSession;
+    setSidebarSearchOpen(false);
+    if (projectId) return openProject(projectId);
+    if (groupProjectId && groupId) return openProjectGroup(groupProjectId, groupId);
+    if (projectSession) {
+      const [sessionProjectId, sessionId] = projectSession.split(':');
+      return openProjectSession(sessionProjectId, sessionId);
+    }
+    if (looseSession) return openLooseSession(looseSession);
+    return;
+  }
+  const sidebarGroupControl = event.target.closest('[data-sidebar-group-menu], [data-sidebar-group-action]');
+  if (sidebarGroupControl) {
+    if (sidebarGroupControl.dataset.sidebarGroupMenu) {
+      toggleSidebarGroupMenu(sidebarGroupControl.dataset.sidebarGroupMenu);
+      return;
+    }
+    runSidebarGroupAction(
+      sidebarGroupControl.dataset.sidebarGroupAction,
+      sidebarGroupControl.dataset.projectId,
+      sidebarGroupControl.dataset.projectGroupId,
+    );
+    return;
+  }
+  if (state.openSidebarGroupMenuKey && !event.target.closest('.history-team-chat-menu-wrap')) {
+    state.openSidebarGroupMenuKey = null;
+    render();
+  }
+  const groupHeaderControl = event.target.closest('[data-group-header-search], [data-group-header-menu], [data-group-header-action]');
+  if (groupHeaderControl) {
+    if (groupHeaderControl.dataset.groupHeaderSearch !== undefined) {
+      toggleGroupHeaderSearch();
+      return;
+    }
+    if (groupHeaderControl.dataset.groupHeaderMenu !== undefined) {
+      toggleGroupHeaderMenu();
+      return;
+    }
+    runGroupHeaderAction(
+      groupHeaderControl.dataset.groupHeaderAction,
+      groupHeaderControl.dataset.projectId,
+      groupHeaderControl.dataset.projectGroupId,
+    );
+    return;
+  }
+  if (state.groupHeaderMenuOpen && !event.target.closest('.group-header-menu-wrap')) {
+    state.groupHeaderMenuOpen = false;
+    render();
+  }
+  const clickedInsideSidebarSearch = event.target.closest('[data-sidebar-search-panel], [data-sidebar-search-toggle]');
+  if (state.sidebarSearchOpen && !clickedInsideSidebarSearch) setSidebarSearchOpen(false);
   const issueTemplateTarget = event.target.closest('[data-issue-template]');
   if (issueTemplateTarget) {
     applyIssueDescriptionTemplate(issueTemplateTarget.dataset.issueTemplate || '');
@@ -10180,6 +10565,16 @@ document.body.addEventListener('submit', (event) => {
   }
 });
 document.body.addEventListener('input', (event) => {
+  if (event.target instanceof HTMLInputElement && event.target.dataset.groupSearchInput !== undefined) {
+    state.groupSearchQuery = event.target.value;
+    refreshGroupSearchResults();
+    return;
+  }
+  if (event.target instanceof HTMLInputElement && event.target.dataset.sidebarSearchInput !== undefined) {
+    state.sidebarSearchQuery = event.target.value;
+    renderSidebarSearchResults();
+    return;
+  }
   if (event.target instanceof HTMLTextAreaElement && event.target.dataset.issueCreateDescription !== undefined) {
     const templateDeck = event.target.closest('.issue-create-editor')?.querySelector('[data-issue-template-deck]');
     resizeIssueDescriptionTextarea(event.target);
@@ -10334,6 +10729,25 @@ document.body.addEventListener('focusout', (event) => {
   }
 });
 document.body.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && state.sidebarSearchOpen) {
+    event.preventDefault();
+    setSidebarSearchOpen(false);
+    return;
+  }
+  if (event.key === 'Escape' && state.openSidebarGroupMenuKey) {
+    event.preventDefault();
+    state.openSidebarGroupMenuKey = null;
+    render();
+    return;
+  }
+  if (event.key === 'Escape' && (state.groupHeaderMenuOpen || state.groupSearchOpen)) {
+    event.preventDefault();
+    state.groupHeaderMenuOpen = false;
+    state.groupSearchOpen = false;
+    state.groupSearchQuery = '';
+    render();
+    return;
+  }
   if (event.target instanceof HTMLTextAreaElement && event.target.dataset.meetingIntakeInput && event.key === 'Enter' && !event.shiftKey) {
     event.preventDefault();
     submitMeetingIntake(state.activeProject || 'snack-product-iteration', event.target.dataset.meetingIntakeInput);
