@@ -118,6 +118,8 @@ const state = {
   projectGroupChatFilter: 'all',
   projectGroupChatSelection: [],
   projectGroupChatEditingGroupId: null,
+  projectGroupPage: 1,
+  projectGroupActionModal: null,
   projectCollaboratorManagerType: null,
   projectCollaboratorPickerType: null,
   projectCollaboratorQuery: '',
@@ -176,6 +178,7 @@ const state = {
 };
 
 const currentUserName = '田晓柔';
+const projectGroupPageSize = 4;
 const projectUserDirectory = [
   { name: '陈雅莉', role: '产品经理' },
   { name: '蒋双奔', role: '研发工程师' },
@@ -396,9 +399,47 @@ const projectFolders = [
         createdAt: '2026年7月24日',
         participants: ['田晓柔', 'Snack', '前端工程师-小贝', 'QA-小林', '产品设计 Agent'],
       },
+      {
+        id: 'snack-product-weekly-group',
+        name: '产品周会协作群',
+        createdAt: '2026年7月25日',
+        participants: ['田晓柔', 'Snack', '产品设计 Agent', '研发交付 Agent'],
+      },
+      {
+        id: 'snack-taskhub-review-group',
+        name: 'Task Hub 评审群',
+        createdAt: '2026年7月28日',
+        participants: ['田晓柔', 'Snack', '前端工程师-小贝', 'QA-小林'],
+      },
+      {
+        id: 'snack-record-experience-group',
+        name: 'Snack Record 体验群',
+        createdAt: '2026年7月30日',
+        participants: ['田晓柔', 'Snack', '产品设计 Agent', 'QA-小林'],
+      },
+      {
+        id: 'snack-mobile-integration-group',
+        name: '移动端联调群',
+        createdAt: '2026年7月31日',
+        participants: ['田晓柔', 'Snack', '前端工程师-小贝'],
+      },
+      {
+        id: 'snack-user-research-group',
+        name: '用户研究同步群',
+        createdAt: '2026年8月1日',
+        participants: ['田晓柔', 'Snack', '产品设计 Agent'],
+      },
+      {
+        id: 'snack-release-prep-group',
+        name: '版本发布准备群',
+        createdAt: '2026年8月3日',
+        participants: ['田晓柔', 'Snack', '前端工程师-小贝', 'QA-小林', '研发交付 Agent'],
+      },
     ],
   },
 ];
+
+state.collapsedProjects = projectFolders.map((project) => project.id);
 
 const issues = [
   {
@@ -898,7 +939,7 @@ function render() {
   renderProjectHistory();
   renderMeetingDemoControls();
   mainSurface.classList.toggle('edge-to-edge', ['project', 'projectBoard', 'projectSchedule', 'issue', 'recordLibrary', 'recordSettings', 'recordSummary'].includes(state.view));
-  mainSurface.innerHTML = `${renderMainView()}${state.projectCreationOpen ? renderProjectCreationModal() : ''}${state.issueCreationOpen ? renderIssueCreationModal() : ''}${state.projectGroupChatOpen ? renderProjectGroupChatModal() : ''}${renderMeetingOverlays()}${renderSnackRecordOverlays()}`;
+  mainSurface.innerHTML = `${renderMainView()}${state.projectCreationOpen ? renderProjectCreationModal() : ''}${state.issueCreationOpen ? renderIssueCreationModal() : ''}${state.projectGroupChatOpen ? renderProjectGroupChatModal() : ''}${state.projectGroupActionModal ? renderProjectGroupActionModal() : ''}${renderMeetingOverlays()}${renderSnackRecordOverlays()}`;
   renderIcons();
   syncProjectRenameFocus();
   syncProjectCreationFocus();
@@ -1016,9 +1057,8 @@ function renderProjectHistory() {
     </div>
     <div class="sidebar-section-header">
       <div class="section-title">项目</div>
-      <button class="sidebar-project-create" data-create-project>
+      <button class="sidebar-project-create" data-create-project aria-label="新建项目" title="新建项目">
         <i data-lucide="plus"></i>
-        <span>新建项目</span>
       </button>
     </div>
     <div class="history-tree">${getVisibleProjectFolders().map(renderHistoryProject).join('')}</div>
@@ -1031,7 +1071,6 @@ function renderHistoryProject(project) {
     || (state.view === 'recordSummary' && state.snackRecordSummaryProjectId === project.id);
   const renaming = state.renamingProjectId === project.id;
   const menuOpen = state.openProjectMenuId === project.id;
-  const createMenuOpen = state.openProjectCreateMenuId === project.id;
   return `
     <section class="history-project conversation-drop-zone ${expanded ? 'expanded' : ''} ${project.pinnedAt ? 'pinned-project' : ''}" data-conversation-drop-project="${project.id}">
       <div class="history-project-row">
@@ -1041,20 +1080,16 @@ function renderHistoryProject(project) {
             <input data-project-title-input="${project.id}" value="${escapeAttribute(project.title)}" aria-label="项目名称" />
           </div>
         ` : `
-          <button class="history-project-title ${activeFolder ? 'active' : ''}" data-project-open="${project.id}">
+          <button class="history-project-title ${activeFolder ? 'active' : ''}" data-project-toggle="${project.id}" aria-expanded="${expanded ? 'true' : 'false'}">
             <i data-lucide="${expanded ? 'folder-open' : 'folder'}"></i>
             <span><strong>${escapeHtml(project.title)}</strong></span>
             ${project.pinnedAt ? '<i class="project-pin-indicator" data-lucide="pin"></i>' : ''}
           </button>
         `}
-        <button class="history-toggle" aria-label="${expanded ? '收起项目' : '展开项目'}" data-project-toggle="${project.id}">
-          <i class="tree-chevron" data-lucide="chevron-right"></i>
-        </button>
         <span class="history-project-create-wrap">
-          <button class="history-add ${createMenuOpen ? 'active' : ''}" aria-label="新建会话或群聊" data-project-create-menu="${project.id}" aria-expanded="${createMenuOpen ? 'true' : 'false'}">
+          <button class="history-add" aria-label="新建会话" data-project-create-action="single" data-project-id="${project.id}">
             <i data-lucide="plus"></i>
           </button>
-          ${createMenuOpen ? renderProjectCreateMenu(project) : ''}
         </span>
         <span class="history-project-menu-wrap">
           <button class="history-menu-trigger ${menuOpen ? 'active' : ''}" aria-label="更多项目操作" data-project-menu="${project.id}">
@@ -1068,28 +1103,13 @@ function renderHistoryProject(project) {
   `;
 }
 
-function renderProjectCreateMenu(project) {
-  return `
-    <div class="history-create-menu" role="menu" aria-label="${escapeAttribute(project.title)} 新建入口">
-      <button class="history-create-item" data-project-create-action="single" data-project-id="${project.id}">
-        <i data-lucide="message-square"></i>
-        <span>新建会话</span>
-      </button>
-      <button class="history-create-item" data-project-create-action="group" data-project-id="${project.id}">
-        <i data-lucide="messages-square"></i>
-        <span>新建群聊</span>
-      </button>
-    </div>
-  `;
-}
-
 function renderProjectMoreMenu(project) {
   const pinned = Boolean(project.pinnedAt);
   return `
     <div class="project-more-menu" role="menu" aria-label="${escapeAttribute(project.title)} 更多操作">
-      <button class="project-menu-item" data-project-action="add-schedule" data-project-id="${project.id}">
-        <i data-lucide="calendar-plus"></i>
-        <span>添加日程</span>
+      <button class="project-menu-item" data-project-action="add-group" data-project-id="${project.id}">
+        <i data-lucide="messages-square"></i>
+        <span>添加群聊</span>
       </button>
       <button class="project-menu-item" data-project-action="rename" data-project-id="${project.id}">
         <i data-lucide="pencil"></i>
@@ -1108,6 +1128,7 @@ function renderProjectMoreMenu(project) {
 }
 
 function renderProjectSessions(project) {
+  const boardActive = state.view === 'projectBoard' && state.activeProject === project.id;
   const groupActive = state.view === 'project' && state.activeProject === project.id && state.activeSession === 'group';
   const groupSession = project.groupMessages && project.groupMessages.length
     ? [{
@@ -1131,6 +1152,10 @@ function renderProjectSessions(project) {
   const visibleSessions = expanded ? allSessions : allSessions.slice(0, 3);
   const hiddenCount = Math.max(0, allSessions.length - visibleSessions.length);
   return `
+    <button class="history-session project-board-session ${boardActive ? 'active' : ''}" data-project-open="${escapeAttribute(project.id)}">
+      <i data-lucide="kanban-square"></i>
+      <span>项目看板</span>
+    </button>
     ${visibleSessions.map((session) => renderHistorySession(project, session)).join('')}
     ${allSessions.length > 3 ? renderHistoryMore(project, expanded, hiddenCount) : ''}
   `;
@@ -1672,12 +1697,17 @@ function renderProjectGroupList(project, groups) {
       </div>
     `;
   }
+  const totalPages = Math.max(1, Math.ceil(groups.length / projectGroupPageSize));
+  const currentPage = Math.min(Math.max(1, state.projectGroupPage), totalPages);
+  const pageStart = (currentPage - 1) * projectGroupPageSize;
+  const visibleGroups = groups.slice(pageStart, pageStart + projectGroupPageSize);
   return `
-    <div class="project-group-list" role="table" aria-label="项目群聊列表">
-      <div class="project-group-list-heading" role="row">
-        <span>群聊</span><span>创建时间</span><span>成员</span><span>操作</span>
-      </div>
-      ${groups.map((group) => {
+    <div class="project-group-list-shell">
+      <div class="project-group-list" role="table" aria-label="项目群聊列表">
+        <div class="project-group-list-heading" role="row">
+          <span>群聊</span><span>创建时间</span><span>成员</span><span>操作</span>
+        </div>
+        ${visibleGroups.map((group) => {
     const participants = (group.participants || [])
       .map((name) => getProjectGroupChatDirectory(project).find((member) => member.name === name) || { name, isAgent: false });
     return `
@@ -1703,8 +1733,25 @@ function renderProjectGroupList(project, groups) {
           </article>
         `;
   }).join('')}
+      </div>
+      <nav class="project-group-pagination" aria-label="群聊列表分页">
+        <button type="button" data-project-group-page="${currentPage - 1}" ${currentPage === 1 ? 'disabled' : ''} aria-label="上一页"><i data-lucide="chevron-left"></i></button>
+        ${Array.from({ length: totalPages }, (_, index) => index + 1).map((page) => `
+          <button class="${page === currentPage ? 'active' : ''}" type="button" data-project-group-page="${page}" aria-current="${page === currentPage ? 'page' : 'false'}">${page}</button>
+        `).join('')}
+        <button type="button" data-project-group-page="${currentPage + 1}" ${currentPage === totalPages ? 'disabled' : ''} aria-label="下一页"><i data-lucide="chevron-right"></i></button>
+      </nav>
     </div>
   `;
+}
+
+function setProjectGroupPage(page) {
+  const project = getActiveProject();
+  const totalPages = Math.max(1, Math.ceil(getProjectGroups(project || {}).length / projectGroupPageSize));
+  const nextPage = Math.min(Math.max(1, Number(page) || 1), totalPages);
+  if (nextPage === state.projectGroupPage) return;
+  state.projectGroupPage = nextPage;
+  render();
 }
 
 function renderProjectCollaboratorSection(project, type, members) {
@@ -1781,6 +1828,16 @@ function getProjectCollaboratorCandidates(project, type) {
     .filter((member) => member.isAgent === (type === 'agent'))
     .filter((member) => !existingNames.has(member.name))
     .filter((member) => !query || `${member.name} ${member.role}`.toLowerCase().includes(query));
+}
+
+function refreshProjectCollaboratorsPage(options = {}) {
+  const project = getActiveProject();
+  const page = document.querySelector('.project-collaborators-page');
+  if (!project || !(page instanceof HTMLElement)) return false;
+  page.outerHTML = renderProjectCollaboratorsPage(project);
+  renderIcons();
+  if (options.focusSearch) syncProjectCollaboratorSearchFocus();
+  return true;
 }
 
 function renderProjectKnowledgePage(project) {
@@ -1935,25 +1992,109 @@ function getProjectGroupChatDirectory(project) {
   return [...directory.values()];
 }
 
+function getProjectGroupChatFilter() {
+  return ['human', 'agent'].includes(state.projectGroupChatFilter)
+    ? state.projectGroupChatFilter
+    : 'all';
+}
+
+function getProjectGroupChatCandidates(project) {
+  const query = state.projectGroupChatQuery.trim().toLowerCase();
+  const filter = getProjectGroupChatFilter();
+  return getProjectGroupChatDirectory(project)
+    .filter((member) => member.name !== currentUserName && member.name !== 'Snack')
+    .filter((member) => filter === 'all' || member.isAgent === (filter === 'agent'))
+    .filter((member) => !query || `${member.name} ${member.role}`.toLowerCase().includes(query));
+}
+
+function renderProjectGroupChatFilters() {
+  const filter = getProjectGroupChatFilter();
+  return `
+    <nav class="project-group-chat-filters" aria-label="群聊对象筛选">
+      <button class="${filter === 'all' ? 'active' : ''}" type="button" data-project-group-chat-filter="all">全部</button>
+      <button class="${filter === 'human' ? 'active' : ''}" type="button" data-project-group-chat-filter="human">项目成员</button>
+      <button class="${filter === 'agent' ? 'active' : ''}" type="button" data-project-group-chat-filter="agent">专家智能体</button>
+    </nav>
+  `;
+}
+
+function renderProjectGroupChatOptions(project) {
+  const selectedNames = new Set(state.projectGroupChatSelection);
+  const candidates = getProjectGroupChatCandidates(project);
+  return `
+    <div class="project-group-chat-options" role="listbox" aria-label="可加入群聊的对象" aria-multiselectable="true">
+      ${candidates.length ? candidates.map((member) => {
+    const selected = selectedNames.has(member.name);
+    return `
+          <button class="${selected ? 'selected' : ''}" type="button" role="option" aria-selected="${selected ? 'true' : 'false'}" data-project-group-chat-option="${escapeAttribute(member.name)}">
+            <span class="project-group-chat-check"><i data-lucide="check"></i></span>
+            <span class="group-member-avatar ${member.isAgent ? 'agent' : 'human'}">${escapeHtml(member.name.slice(0, 1))}</span>
+            <span><strong>${escapeHtml(member.name)}</strong><small>${escapeHtml(member.role)}</small></span>
+            <em>${member.isAgent ? '智能体' : '成员'}</em>
+          </button>
+        `;
+  }).join('') : '<p class="project-group-chat-empty">没有找到匹配的项目成员或专家智能体</p>'}
+    </div>
+  `;
+}
+
+function renderProjectGroupChatSelectedPanel(project) {
+  const editingGroup = getProjectGroups(project)
+    .find((group) => group.id === state.projectGroupChatEditingGroupId);
+  const directoryByName = new Map(getProjectGroupChatDirectory(project).map((member) => [member.name, member]));
+  const selectedMembers = state.projectGroupChatSelection
+    .map((name) => directoryByName.get(name))
+    .filter(Boolean);
+  return `
+    <aside class="project-group-chat-selected">
+      <header><strong>已选对象</strong><em>${selectedMembers.length}</em></header>
+      <div>
+        ${selectedMembers.map((member) => {
+    const fixed = member.name === currentUserName || member.name === 'Snack';
+    return `
+            <article class="${member.name === 'Snack' ? 'snack' : ''}">
+              <span class="group-member-avatar ${member.isAgent ? 'agent' : 'human'}">${member.name === 'Snack' ? '<i data-lucide="sparkles"></i>' : escapeHtml(member.name.slice(0, 1))}</span>
+              <div><strong>${escapeHtml(member.name)}${member.isAgent ? '<em>Agent</em>' : ''}</strong><small>${escapeHtml(member.role)}</small></div>
+              ${fixed
+    ? `<small>${member.name === currentUserName ? '创建者' : '默认加入'}</small>`
+    : `<button type="button" data-project-group-chat-option="${escapeAttribute(member.name)}" aria-label="移除 ${escapeAttribute(member.name)}"><i data-lucide="x"></i></button>`}
+            </article>
+          `;
+  }).join('')}
+      </div>
+      <footer>
+        <button class="secondary-button" type="button" data-project-group-chat-close>取消</button>
+        <button class="primary-button" type="button" data-project-group-chat-complete>${editingGroup ? '保存' : '完成'}</button>
+      </footer>
+    </aside>
+  `;
+}
+
+function refreshProjectGroupChatDirectory() {
+  const project = getProjectById(state.projectGroupChatProjectId);
+  if (!project) return;
+  const filterNode = document.querySelector('.project-group-chat-filters');
+  const optionsNode = document.querySelector('.project-group-chat-options');
+  if (filterNode instanceof HTMLElement) filterNode.outerHTML = renderProjectGroupChatFilters();
+  if (optionsNode instanceof HTMLElement) optionsNode.outerHTML = renderProjectGroupChatOptions(project);
+  renderIcons();
+}
+
+function refreshProjectGroupChatSelection() {
+  const project = getProjectById(state.projectGroupChatProjectId);
+  if (!project) return;
+  const optionsNode = document.querySelector('.project-group-chat-options');
+  const selectedNode = document.querySelector('.project-group-chat-selected');
+  if (optionsNode instanceof HTMLElement) optionsNode.outerHTML = renderProjectGroupChatOptions(project);
+  if (selectedNode instanceof HTMLElement) selectedNode.outerHTML = renderProjectGroupChatSelectedPanel(project);
+  renderIcons();
+}
+
 function renderProjectGroupChatModal() {
   const project = getProjectById(state.projectGroupChatProjectId);
   if (!project) return '';
   const editingGroup = getProjectGroups(project)
     .find((group) => group.id === state.projectGroupChatEditingGroupId);
-  const directory = getProjectGroupChatDirectory(project);
-  const directoryByName = new Map(directory.map((member) => [member.name, member]));
-  const selectedNames = new Set(state.projectGroupChatSelection);
-  const query = state.projectGroupChatQuery.trim().toLowerCase();
-  const filter = ['human', 'agent'].includes(state.projectGroupChatFilter)
-    ? state.projectGroupChatFilter
-    : 'all';
-  const candidates = directory
-    .filter((member) => member.name !== currentUserName && member.name !== 'Snack')
-    .filter((member) => filter === 'all' || member.isAgent === (filter === 'agent'))
-    .filter((member) => !query || `${member.name} ${member.role}`.toLowerCase().includes(query));
-  const selectedMembers = state.projectGroupChatSelection
-    .map((name) => directoryByName.get(name))
-    .filter(Boolean);
   return `
     <section class="project-group-chat-backdrop" data-project-group-chat-backdrop role="presentation">
       <section class="project-group-chat-modal" role="dialog" aria-modal="true" aria-labelledby="projectGroupChatTitle">
@@ -1970,46 +2111,10 @@ function renderProjectGroupChatModal() {
               <i data-lucide="search"></i>
               <input type="search" value="${escapeAttribute(state.projectGroupChatQuery)}" data-project-group-chat-search placeholder="搜索项目成员或专家智能体" autocomplete="off" />
             </label>
-            <nav class="project-group-chat-filters" aria-label="群聊对象筛选">
-              <button class="${filter === 'all' ? 'active' : ''}" type="button" data-project-group-chat-filter="all">全部</button>
-              <button class="${filter === 'human' ? 'active' : ''}" type="button" data-project-group-chat-filter="human">项目成员</button>
-              <button class="${filter === 'agent' ? 'active' : ''}" type="button" data-project-group-chat-filter="agent">专家智能体</button>
-            </nav>
-            <div class="project-group-chat-options" role="listbox" aria-label="可加入群聊的对象" aria-multiselectable="true">
-              ${candidates.length ? candidates.map((member) => {
-    const selected = selectedNames.has(member.name);
-    return `
-                  <button class="${selected ? 'selected' : ''}" type="button" role="option" aria-selected="${selected ? 'true' : 'false'}" data-project-group-chat-option="${escapeAttribute(member.name)}">
-                    <span class="project-group-chat-check"><i data-lucide="check"></i></span>
-                    <span class="group-member-avatar ${member.isAgent ? 'agent' : 'human'}">${escapeHtml(member.name.slice(0, 1))}</span>
-                    <span><strong>${escapeHtml(member.name)}</strong><small>${escapeHtml(member.role)}</small></span>
-                    <em>${member.isAgent ? '智能体' : '成员'}</em>
-                  </button>
-                `;
-  }).join('') : '<p class="project-group-chat-empty">没有找到匹配的项目成员或专家智能体</p>'}
-            </div>
+            ${renderProjectGroupChatFilters()}
+            ${renderProjectGroupChatOptions(project)}
           </section>
-          <aside class="project-group-chat-selected">
-            <header><strong>已选对象</strong><em>${selectedMembers.length}</em></header>
-            <div>
-              ${selectedMembers.map((member) => {
-    const fixed = member.name === currentUserName || member.name === 'Snack';
-    return `
-                  <article class="${member.name === 'Snack' ? 'snack' : ''}">
-                    <span class="group-member-avatar ${member.isAgent ? 'agent' : 'human'}">${member.name === 'Snack' ? '<i data-lucide="sparkles"></i>' : escapeHtml(member.name.slice(0, 1))}</span>
-                    <div><strong>${escapeHtml(member.name)}${member.isAgent ? '<em>Agent</em>' : ''}</strong><small>${escapeHtml(member.role)}</small></div>
-                    ${fixed
-    ? `<small>${member.name === currentUserName ? '创建者' : '默认加入'}</small>`
-    : `<button type="button" data-project-group-chat-option="${escapeAttribute(member.name)}" aria-label="移除 ${escapeAttribute(member.name)}"><i data-lucide="x"></i></button>`}
-                  </article>
-                `;
-  }).join('')}
-            </div>
-            <footer>
-              <button class="secondary-button" type="button" data-project-group-chat-close>取消</button>
-              <button class="primary-button" type="button" data-project-group-chat-complete>${editingGroup ? '保存' : '完成'}</button>
-            </footer>
-          </aside>
+          ${renderProjectGroupChatSelectedPanel(project)}
         </div>
       </section>
     </section>
@@ -2020,6 +2125,8 @@ function openProjectGroupChat(projectId, groupId = null) {
   if (!getProjectById(projectId)) return;
   const project = getProjectById(projectId);
   const editingGroup = getProjectGroups(project).find((group) => group.id === groupId);
+  state.openProjectMenuId = null;
+  state.openProjectCreateMenuId = null;
   state.projectGroupChatOpen = true;
   state.projectGroupChatProjectId = projectId;
   state.projectGroupChatQuery = '';
@@ -2047,8 +2154,7 @@ function toggleProjectGroupChatParticipant(name) {
   state.projectGroupChatSelection = state.projectGroupChatSelection.includes(name)
     ? state.projectGroupChatSelection.filter((memberName) => memberName !== name)
     : [...state.projectGroupChatSelection, name];
-  render();
-  syncProjectGroupChatSearchFocus();
+  refreshProjectGroupChatSelection();
 }
 
 function syncProjectGroupChatSearchFocus() {
@@ -2082,39 +2188,114 @@ function completeProjectGroupChat() {
   createGroupChat(projectId, participants);
 }
 
-function runProjectGroupAction(action, groupId) {
+function getActiveProjectGroup(groupId) {
   const project = getActiveProject();
   const group = getProjectGroups(project || {}).find((item) => item.id === groupId);
-  if (!project || !group) return;
-  if (action === 'members') {
-    openProjectGroupChat(project.id, group.id);
+  return project && group ? { project, group } : null;
+}
+
+function renderProjectGroupActionModal() {
+  const modal = state.projectGroupActionModal;
+  const context = getActiveProjectGroup(modal?.groupId);
+  if (!modal || !context) return '';
+  const { project, group } = context;
+  const shareUrl = `https://snack.mechlabs.cn/share/team/${encodeURIComponent(group.id)}`;
+  const isShare = modal.type === 'share';
+  const isRename = modal.type === 'rename';
+  return `
+    <section class="project-group-action-backdrop" data-project-group-modal-backdrop role="presentation">
+      <section class="project-group-action-modal ${modal.type}" role="dialog" aria-modal="true" aria-labelledby="projectGroupActionTitle">
+        <header>
+          <div>
+            <h2 id="projectGroupActionTitle">${isShare ? '分享群组' : isRename ? '重命名' : '删除群聊'}</h2>
+            <p>${isShare
+    ? '复制链接后，同项目内用户可以通过该链接加入群聊'
+    : isRename
+      ? '名称不能为空，建议控制在30个中文字符左右'
+      : `确定删除群聊「${escapeHtml(group.name)}」吗？删除后该群聊和会话内容都会被删除。`}</p>
+          </div>
+          <button type="button" data-project-group-modal-close aria-label="关闭"><i data-lucide="x"></i></button>
+        </header>
+        ${isShare ? `
+          <div class="project-group-action-share">
+            <input type="text" value="${escapeAttribute(shareUrl)}" readonly data-project-group-share-url aria-label="群聊分享链接" />
+            <button class="primary-button" type="button" data-project-group-modal-action="copy-link">复制链接</button>
+          </div>
+        ` : isRename ? `
+          <div class="project-group-action-form">
+            <input type="text" value="${escapeAttribute(group.name)}" maxlength="30" data-project-group-rename-input aria-label="群聊名称" />
+          </div>
+          <footer>
+            <button class="secondary-button" type="button" data-project-group-modal-close>取消</button>
+            <button class="primary-button" type="button" data-project-group-modal-action="save-name">保存</button>
+          </footer>
+        ` : `
+          <footer>
+            <button class="secondary-button" type="button" data-project-group-modal-close>取消</button>
+            <button class="primary-button danger" type="button" data-project-group-modal-action="confirm-delete">确认删除</button>
+          </footer>
+        `}
+      </section>
+    </section>
+  `;
+}
+
+function closeProjectGroupActionModal() {
+  state.projectGroupActionModal = null;
+  render();
+}
+
+function handleProjectGroupModalAction(action) {
+  const modal = state.projectGroupActionModal;
+  const context = getActiveProjectGroup(modal?.groupId);
+  if (!modal || !context) return;
+  const { project, group } = context;
+  if (action === 'copy-link') {
+    const input = document.querySelector('[data-project-group-share-url]');
+    const shareUrl = input instanceof HTMLInputElement ? input.value : '';
+    if (navigator.clipboard?.writeText) navigator.clipboard.writeText(shareUrl).catch(() => {});
+    if (input instanceof HTMLInputElement) input.select();
+    showToast('群聊分享链接已复制');
     return;
   }
-  if (action === 'rename') {
-    const nextName = window.prompt('修改群聊名称', group.name);
-    if (nextName === null) return;
-    const normalizedName = nextName.trim();
-    if (!normalizedName) {
+  if (action === 'save-name') {
+    const input = document.querySelector('[data-project-group-rename-input]');
+    const nextName = input instanceof HTMLInputElement ? input.value.trim() : '';
+    if (!nextName) {
       showToast('群聊名称不能为空');
+      if (input instanceof HTMLInputElement) input.focus();
       return;
     }
-    group.name = normalizedName;
+    group.name = nextName.slice(0, 30);
+    state.projectGroupActionModal = null;
     render();
     showToast('群聊名称已更新');
     return;
   }
-  if (action === 'share') {
-    const shareUrl = `${window.location.origin}${window.location.pathname}#project-${project.id}-group-${group.id}`;
-    if (navigator.clipboard?.writeText) navigator.clipboard.writeText(shareUrl).catch(() => {});
-    showToast('群聊分享链接已复制');
-    return;
-  }
-  if (action === 'dissolve') {
-    if (!window.confirm(`确认解散「${group.name}」？此操作仅影响当前 Demo。`)) return;
+  if (action === 'confirm-delete') {
     project.groups = getProjectGroups(project).filter((item) => item.id !== group.id);
     if (project.activeGroupId === group.id) project.activeGroupId = project.groups[0]?.id || null;
+    state.projectGroupPage = Math.min(
+      state.projectGroupPage,
+      Math.max(1, Math.ceil(project.groups.length / projectGroupPageSize)),
+    );
+    state.projectGroupActionModal = null;
     render();
-    showToast('群聊已解散');
+    showToast('群聊已删除');
+  }
+}
+
+function runProjectGroupAction(action, groupId) {
+  const context = getActiveProjectGroup(groupId);
+  if (!context) return;
+  const { project, group } = context;
+  if (action === 'members') {
+    openProjectGroupChat(project.id, group.id);
+    return;
+  }
+  if (['rename', 'share', 'dissolve'].includes(action)) {
+    state.projectGroupActionModal = { type: action, groupId: group.id };
+    render();
   }
 }
 
@@ -2124,7 +2305,7 @@ function toggleProjectCollaboratorManager(type) {
   state.projectCollaboratorManagerType = closing ? null : normalizedType;
   state.projectCollaboratorPickerType = null;
   state.projectCollaboratorQuery = '';
-  render();
+  if (!refreshProjectCollaboratorsPage()) render();
 }
 
 function toggleProjectCollaboratorPicker(type) {
@@ -2132,8 +2313,7 @@ function toggleProjectCollaboratorPicker(type) {
   state.projectCollaboratorManagerType = normalizedType;
   state.projectCollaboratorPickerType = state.projectCollaboratorPickerType === normalizedType ? null : normalizedType;
   state.projectCollaboratorQuery = '';
-  render();
-  if (state.projectCollaboratorPickerType) syncProjectCollaboratorSearchFocus();
+  if (!refreshProjectCollaboratorsPage({ focusSearch: Boolean(state.projectCollaboratorPickerType) })) render();
 }
 
 function syncProjectCollaboratorSearchFocus() {
@@ -2161,8 +2341,7 @@ function addProjectCollaborator(name) {
   state.projectCollaboratorManagerType = member.isAgent ? 'agent' : 'human';
   state.projectCollaboratorPickerType = member.isAgent ? 'agent' : 'human';
   state.projectCollaboratorQuery = '';
-  render();
-  syncProjectCollaboratorSearchFocus();
+  if (!refreshProjectCollaboratorsPage({ focusSearch: true })) render();
   showToast(`${member.name} 已加入项目`);
 }
 
@@ -3642,7 +3821,7 @@ function removeProjectMemberFromProject(name) {
   project.agentStatuses = (project.agentStatuses || []).filter(([memberName]) => memberName !== name);
   project.updated = '现在';
   state.memberManagerQuery = '';
-  render();
+  if (!refreshProjectCollaboratorsPage()) render();
   showToast(`${name} 已移出项目`);
 }
 
@@ -7208,6 +7387,7 @@ function createNewProject(form) {
   project.pushRule = pushRule;
   state.projectSerial += 1;
   projectFolders.unshift(project);
+  state.collapsedProjects = [...new Set([...state.collapsedProjects, projectId])];
   state.projectCreationOpen = false;
   state.projectEditingId = null;
   state.projectCreationWikiTopics = [];
@@ -7856,6 +8036,7 @@ function toggleAgentStatus() {
 }
 
 function toggleProjectCollapse(projectId) {
+  if (!getProjectById(projectId)) return;
   state.openProjectMenuId = null;
   state.openProjectCreateMenuId = null;
   const collapsed = state.collapsedProjects.includes(projectId);
@@ -7888,7 +8069,7 @@ function toggleProjectCreateMenu(projectId) {
 }
 
 function runProjectMenuAction(action, projectId) {
-  if (action === 'add-schedule') return startMeetingSetupGuide(projectId);
+  if (action === 'add-group') return openProjectGroupChat(projectId);
   if (action === 'rename') return startProjectRename(projectId);
   if (action === 'pin') return toggleProjectPin(projectId);
   if (action === 'remove') return removeProjectFromSidebar(projectId);
@@ -8013,6 +8194,7 @@ function createGroupChat(projectId, participants = null) {
     };
     project.groups = [...groups, group];
     project.activeGroupId = group.id;
+    state.projectGroupPage = Math.ceil(project.groups.length / projectGroupPageSize);
   }
   if (!project.groupMessages || !project.groupMessages.length) {
     project.groupMessages = [
@@ -8996,7 +9178,7 @@ function handleBodyClick(event) {
   if (state.projectMemberPickerOpen && !clickedInsideMemberPicker) closeProjectMemberPicker();
   const clickedInsideWikiTopicPicker = event.target.closest('[data-project-wiki-topic-picker]');
   if (state.projectWikiTopicPickerOpen && !clickedInsideWikiTopicPicker) closeProjectWikiTopicPicker();
-  const target = event.target.closest('[data-view], [data-create-project], [data-project-config], [data-project-detail-sidebar], [data-project-detail-tab], [data-project-modal-close], [data-project-modal-backdrop], [data-project-group-chat-open], [data-project-group-chat-close], [data-project-group-chat-backdrop], [data-project-group-chat-filter], [data-project-group-chat-option], [data-project-group-chat-complete], [data-project-group-action], [data-project-collaborator-manager], [data-project-collaborator-add], [data-project-collaborator-option], [data-create-issue], [data-issue-modal-close], [data-issue-modal-backdrop], [data-project-folder-remove], [data-project-wiki-topic-toggle], [data-project-wiki-topic-option], [data-project-knowledge-add], [data-project-members-add], [data-project-member-picker], [data-project-member-add], [data-project-member-search], [data-project-member-option], [data-project-member-remove], [data-snack-desktop-download], [data-monitoring-rule-recognize], [data-monitoring-rule-edit], [data-monitoring-rule-remove], [data-project-intake-submit], [data-meeting-intake-submit], [data-mock-action], [data-confirmation-action], [data-confirmation-cancel], [data-model-menu], [data-model-select], [data-project-picker], [data-project-context], [data-project-context-empty], [data-project-picker-search], [data-agent-status-toggle], [data-task-tab], [data-task-filter], [data-project-board-tab], [data-issue-tab], [data-close-issue-tab], [data-todo-inbox-issue], [data-issue-id], [data-log-doc], [data-close-log-doc], [data-project-open], [data-project-toggle], [data-project-sessions], [data-project-session], [data-project-menu], [data-project-action], [data-project-create-menu], [data-project-create-action], [data-loose-session], [data-board-sidebar], [data-member-sidebar], [data-member-tab], [data-member-manager-toggle], [data-member-manager-add], [data-member-manager-remove], [data-agent-tab], [data-agent-chat], [data-agent-menu], [data-agent-select], [data-resource-tab], [data-toast]');
+  const target = event.target.closest('[data-view], [data-create-project], [data-project-config], [data-project-detail-sidebar], [data-project-detail-tab], [data-project-modal-close], [data-project-modal-backdrop], [data-project-group-chat-open], [data-project-group-chat-close], [data-project-group-chat-backdrop], [data-project-group-chat-filter], [data-project-group-chat-option], [data-project-group-chat-complete], [data-project-group-action], [data-project-group-page], [data-project-group-modal-close], [data-project-group-modal-backdrop], [data-project-group-modal-action], [data-project-collaborator-manager], [data-project-collaborator-add], [data-project-collaborator-option], [data-create-issue], [data-issue-modal-close], [data-issue-modal-backdrop], [data-project-folder-remove], [data-project-wiki-topic-toggle], [data-project-wiki-topic-option], [data-project-knowledge-add], [data-project-members-add], [data-project-member-picker], [data-project-member-add], [data-project-member-search], [data-project-member-option], [data-project-member-remove], [data-snack-desktop-download], [data-monitoring-rule-recognize], [data-monitoring-rule-edit], [data-monitoring-rule-remove], [data-project-intake-submit], [data-meeting-intake-submit], [data-mock-action], [data-confirmation-action], [data-confirmation-cancel], [data-model-menu], [data-model-select], [data-project-picker], [data-project-context], [data-project-context-empty], [data-project-picker-search], [data-agent-status-toggle], [data-task-tab], [data-task-filter], [data-project-board-tab], [data-issue-tab], [data-close-issue-tab], [data-todo-inbox-issue], [data-issue-id], [data-log-doc], [data-close-log-doc], [data-project-open], [data-project-toggle], [data-project-sessions], [data-project-session], [data-project-menu], [data-project-action], [data-project-create-menu], [data-project-create-action], [data-loose-session], [data-board-sidebar], [data-member-sidebar], [data-member-tab], [data-member-manager-toggle], [data-member-manager-add], [data-member-manager-remove], [data-agent-tab], [data-agent-chat], [data-agent-menu], [data-agent-select], [data-resource-tab], [data-toast]');
   if (!target) {
     if (state.openProjectMenuId || state.openProjectCreateMenuId || state.modelPickerOpen || state.projectPickerOpen) {
       state.openProjectMenuId = null;
@@ -9040,6 +9222,12 @@ function handleBodyClick(event) {
     if (event.target === target) closeIssueCreationModal();
     return;
   }
+  if (target.dataset.projectGroupModalClose !== undefined) return closeProjectGroupActionModal();
+  if (target.dataset.projectGroupModalBackdrop !== undefined) {
+    if (event.target === target) closeProjectGroupActionModal();
+    return;
+  }
+  if (target.dataset.projectGroupModalAction) return handleProjectGroupModalAction(target.dataset.projectGroupModalAction);
   if (target.dataset.projectGroupChatClose !== undefined) return closeProjectGroupChat();
   if (target.dataset.projectGroupChatBackdrop !== undefined) {
     if (event.target === target) closeProjectGroupChat();
@@ -9047,9 +9235,10 @@ function handleBodyClick(event) {
   }
   if (target.dataset.projectGroupChatOpen) return openProjectGroupChat(target.dataset.projectGroupChatOpen);
   if (target.dataset.projectGroupAction) return runProjectGroupAction(target.dataset.projectGroupAction, target.dataset.projectGroupId);
+  if (target.dataset.projectGroupPage) return setProjectGroupPage(target.dataset.projectGroupPage);
   if (target.dataset.projectGroupChatFilter) {
     state.projectGroupChatFilter = target.dataset.projectGroupChatFilter;
-    render();
+    refreshProjectGroupChatDirectory();
     syncProjectGroupChatSearchFocus();
     return;
   }
@@ -9194,7 +9383,7 @@ document.body.addEventListener('submit', (event) => {
 document.body.addEventListener('input', (event) => {
   if (event.target instanceof HTMLInputElement && event.target.dataset.projectGroupChatSearch !== undefined) {
     state.projectGroupChatQuery = event.target.value;
-    render();
+    refreshProjectGroupChatDirectory();
     syncProjectGroupChatSearchFocus();
     return;
   }
@@ -9256,8 +9445,7 @@ document.body.addEventListener('input', (event) => {
   }
   if (event.target instanceof HTMLInputElement && event.target.dataset.projectCollaboratorSearch !== undefined) {
     state.projectCollaboratorQuery = event.target.value;
-    render();
-    syncProjectCollaboratorSearchFocus();
+    if (!refreshProjectCollaboratorsPage({ focusSearch: true })) render();
     return;
   }
   if (event.target instanceof HTMLInputElement && event.target.dataset.projectPickerSearch !== undefined) {
