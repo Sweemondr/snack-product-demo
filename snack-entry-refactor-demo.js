@@ -1403,7 +1403,7 @@ function renderHistorySession(project, session) {
     return `
       <div class="history-session team-chat-session ${session.pinned ? 'pinned' : ''} ${session.active ? 'active' : ''} ${menuOpen ? 'menu-open' : ''}">
         <button class="history-team-chat-main" type="button" ${navigationAttributes} title="进入群聊">
-          ${renderSidebarGroupAvatarStack(project, session)}
+          ${renderSidebarGroupChatIcon()}
           <span>${escapeHtml(session.title)}</span>
           ${session.notificationsMuted ? '<i class="history-team-chat-muted" data-lucide="bell-off" aria-label="已开启免打扰"></i>' : ''}
           ${session.pinned ? '<i class="history-team-chat-pinned" data-lucide="pin" aria-label="已置顶"></i>' : ''}
@@ -1459,23 +1459,8 @@ function renderSidebarGroupMenu(project, session) {
   `;
 }
 
-function renderSidebarGroupAvatarStack(project, session) {
-  const directory = new Map(getProjectGroupChatDirectory(project).map((member) => [member.name, member]));
-  const members = (session.participants || [])
-    .map((name) => directory.get(name) || { name, isAgent: name === 'Snack' || name.endsWith('Agent') })
-    .slice(0, 4);
-  if (!members.length) {
-    return '<span class="history-team-avatar-stack empty"><i data-lucide="users-round"></i></span>';
-  }
-  return `
-    <span class="history-team-avatar-stack count-${members.length}" aria-label="群聊成员">
-      ${members.map((member, index) => `
-        <span class="history-team-avatar ${member.isAgent ? 'agent' : 'human'}" title="${escapeAttribute(member.name)}">
-          ${escapeHtml(member.name.slice(0, 1))}
-        </span>
-      `).join('')}
-    </span>
-  `;
+function renderSidebarGroupChatIcon() {
+  return '<span class="history-team-chat-icon" aria-label="群聊"><i data-lucide="users-round"></i></span>';
 }
 
 function renderLooseSession(session) {

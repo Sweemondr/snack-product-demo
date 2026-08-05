@@ -51,19 +51,19 @@ button {
   display: flex;
   flex-direction: column;
   width: 286px;
-  padding: 12px 12px 16px;
-  background: var(--surface-muted);
+  padding: 0 12px 16px;
+  background: #f1f5f9;
   border-right: 1px solid var(--line);
   transition: width 220ms ease, padding 220ms ease;
 }
 .brand {
   position: relative;
-  height: 40px;
+  height: 64px;
   display: flex;
   flex: 0 0 auto;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 4px;
+  margin-bottom: 0;
   padding-left: 12px;
 }
 .brand-logo {
@@ -94,7 +94,7 @@ button {
 }
 .brand-actions button:hover,
 .sidebar-expand-action:hover {
-  background: rgba(255, 255, 255, 0.58);
+  background: rgba(255, 255, 255, 0.4);
 }
 .brand-actions button:focus-visible,
 .sidebar-expand-action:focus-visible {
@@ -143,7 +143,7 @@ button {
 .sidebar-search-panel {
   position: absolute;
   z-index: 70;
-  top: 56px;
+  top: 64px;
   right: 12px;
   left: 12px;
   display: grid;
@@ -310,7 +310,7 @@ button {
 .nav-row:hover,
 .nav-row.active {
   color: #475569;
-  background: rgba(255, 255, 255, 0.58);
+  background: rgba(255, 255, 255, 0.4);
 }
 .nav-row.active {
   background: #e2e8f0;
@@ -378,7 +378,7 @@ button {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 14px 10px 0;
+  padding: 12px 10px 0;
   border-top: 1px solid var(--line);
 }
 .sidebar-footer img {
@@ -2132,7 +2132,7 @@ body.conversation-dragging {
   text-align: left;
 }
 .project-history .history-project-title {
-  min-height: 40px;
+  min-height: 36px;
   padding: 0 10px;
 }
 .history-project-title.renaming {
@@ -2185,7 +2185,7 @@ body.conversation-dragging {
   border-radius: 8px;
 }
 .project-history .history-session {
-  height: 40px;
+  height: 36px;
   padding: 0 8px 0 28px;
 }
 .history-project-menu-wrap {
@@ -2217,7 +2217,7 @@ body.conversation-dragging {
   width: 136px;
   padding: 6px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 12px;
   background: white;
   box-shadow: 0 14px 36px rgba(15, 23, 42, 0.14);
 }
@@ -2264,8 +2264,8 @@ body.conversation-dragging {
 .project-history .loose-session {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  min-height: 32px;
-  height: 32px;
+  min-height: 36px;
+  height: 36px;
   align-items: center;
   padding: 0 8px;
 }
@@ -2274,7 +2274,7 @@ body.conversation-dragging {
 }
 .project-history .history-session.team-chat-session {
   position: relative;
-  height: 40px;
+  height: 36px;
   display: flex;
   align-items: center;
   margin-bottom: 1px;
@@ -2299,12 +2299,12 @@ body.conversation-dragging {
 }
 .project-history .history-team-chat-main {
   width: 100%;
-  height: 40px;
+  height: 36px;
   min-width: 0;
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 0 38px 0 8px;
+  padding: 0 38px 0 28px;
   border-radius: 12px;
   color: inherit;
   background: transparent;
@@ -2423,89 +2423,18 @@ body.conversation-dragging {
   height: 14px;
   flex: 0 0 auto;
 }
-.history-team-avatar-stack {
-  position: relative;
-  width: 26px;
-  height: 26px;
-  display: block;
-  flex: 0 0 26px !important;
-}
-.history-team-avatar-stack.empty {
+.history-team-chat-icon {
+  width: 18px;
+  height: 18px;
   display: grid;
-  width: 26px;
-  height: 26px;
-  flex-basis: 26px !important;
+  flex: 0 0 18px;
   place-items: center;
-  justify-content: center;
-  border: 0;
-  border-radius: 999px;
-  color: white;
-  background: #fe720a;
-  box-shadow: none;
+  color: #64748b;
 }
-.history-team-avatar-stack.empty svg {
-  width: 14px;
-  height: 14px;
-}
-.history-team-avatar {
-  position: absolute;
-  width: 16px;
-  height: 16px;
-  display: grid;
-  place-items: center;
-  overflow: hidden;
-  border: 1px solid white;
-  border-radius: 999px;
-  color: #fff !important;
-  -webkit-text-fill-color: #fff;
-  background: #fe720a;
-  box-shadow: none;
-  font-size: 8px;
-  font-weight: 700;
-  line-height: 1;
-}
-.history-team-avatar-stack.count-1 .history-team-avatar {
-  top: 0;
-  left: 0;
-  width: 26px;
-  height: 26px;
-  font-size: 11px;
-}
-.history-team-avatar-stack.count-2 .history-team-avatar:nth-child(1) {
-  top: 5px;
-  left: 0;
-}
-.history-team-avatar-stack.count-2 .history-team-avatar:nth-child(2) {
-  top: 5px;
-  left: 10px;
-}
-.history-team-avatar-stack.count-3 .history-team-avatar:nth-child(1) {
-  top: 10px;
-  left: 0;
-}
-.history-team-avatar-stack.count-3 .history-team-avatar:nth-child(2) {
-  top: 10px;
-  left: 10px;
-}
-.history-team-avatar-stack.count-3 .history-team-avatar:nth-child(3) {
-  top: 0;
-  left: 5px;
-}
-.history-team-avatar-stack.count-4 .history-team-avatar:nth-child(1) {
-  top: 10px;
-  left: 0;
-}
-.history-team-avatar-stack.count-4 .history-team-avatar:nth-child(2) {
-  top: 10px;
-  left: 10px;
-}
-.history-team-avatar-stack.count-4 .history-team-avatar:nth-child(3) {
-  top: 0;
-  left: 0;
-}
-.history-team-avatar-stack.count-4 .history-team-avatar:nth-child(4) {
-  top: 0;
-  left: 10px;
+.history-team-chat-icon svg {
+  width: 18px;
+  height: 18px;
+  stroke-width: 1.8;
 }
 .history-session small {
   margin-left: auto;
@@ -2528,23 +2457,24 @@ body.conversation-dragging {
 .history-more:hover,
 .history-add:hover,
 .history-menu-trigger:hover {
-  color: var(--text);
-  background: rgba(255, 255, 255, 0.82);
+  color: #475569;
+  background: rgba(255, 255, 255, 0.4);
 }
 .history-session.active,
 .history-project-title.active,
 .loose-session.active {
-  border: 1px solid rgba(254, 114, 10, 0.18);
+  border-color: transparent;
+  color: #475569;
+  background: #e2e8f0;
 }
 .history-project-title.active {
-  color: var(--brand);
   border-color: transparent;
-  background: #fff0e8;
-  font-weight: 700;
+  background: #e2e8f0;
+  font-weight: 600;
 }
 .history-project-title.active svg,
 .history-project-title.active strong {
-  color: var(--brand);
+  color: #475569;
 }
 .dialogue-title {
   margin-top: 12px;
@@ -9658,7 +9588,7 @@ body.conversation-dragging {
 @media (max-width: 1120px) {
   .sidebar {
     width: 250px;
-    padding: 20px 12px;
+    padding: 0 12px 16px;
   }
   .project-chat-shell.side-open,
   .project-chat-shell.board-open {
