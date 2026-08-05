@@ -134,8 +134,10 @@ const state = {
   projectCreationMembers: [],
   projectCreationFolders: [],
   projectCreationWikiTopics: [],
+  projectCreationSessionAssets: [],
   projectWikiTopicPickerOpen: false,
   projectKnowledgeEditorOpen: false,
+  projectLocalWorkspacePromptOpen: false,
   projectMemberQuery: '',
   projectMemberPickerOpen: false,
   projectMemberPickerType: 'human',
@@ -151,9 +153,11 @@ const state = {
   projectGroupChatEditingGroupId: null,
   projectGroupPage: 1,
   projectGroupActionModal: null,
+  projectGroupMembersModal: null,
   projectCollaboratorManagerType: null,
   projectCollaboratorPickerType: null,
   projectCollaboratorQuery: '',
+  projectCollaboratorPermissionMember: null,
   issueCreationOpen: false,
   issueCreationProjectId: null,
   issueSerial: 1,
@@ -210,6 +214,13 @@ const state = {
 
 const currentUserName = '田晓柔';
 const projectGroupPageSize = 4;
+
+function isSnackDesktopRuntime() {
+  const userAgent = window.navigator?.userAgent || '';
+  return /(?:^|\s)SnackDesktop\//i.test(userAgent)
+    || document.documentElement.dataset.snackHost === 'snack-desktop';
+}
+
 const projectUserDirectory = [
   { name: '陈雅莉', role: '产品经理' },
   { name: '蒋双奔', role: '研发工程师' },
@@ -564,9 +575,7 @@ const projectFolders = [
   },
 ];
 
-state.collapsedProjects = projectFolders
-  .filter((project) => project.id !== state.activeProject)
-  .map((project) => project.id);
+state.collapsedProjects = [];
 
 const issues = [
   {
@@ -1075,7 +1084,8 @@ function render() {
   renderProjectHistory();
   renderMeetingDemoControls();
   mainSurface.classList.toggle('edge-to-edge', ['project', 'projectBoard', 'projectSchedule', 'issue', 'recordLibrary', 'recordSettings', 'recordSummary'].includes(state.view));
-  mainSurface.innerHTML = `${renderMainView()}${renderLocalKnowledgePickerInputs()}${state.projectCreationOpen ? renderProjectCreationModal() : ''}${state.issueCreationOpen ? renderIssueCreationModal() : ''}${state.projectGroupChatOpen ? renderProjectGroupChatModal() : ''}${state.projectGroupActionModal ? renderProjectGroupActionModal() : ''}${renderLocalKnowledgeModal()}${renderProjectSessionImportModal()}${renderMeetingOverlays()}${renderSnackRecordOverlays()}`;
+  mainSurface.classList.toggle('agent-workspace-surface', state.view === 'agents');
+  mainSurface.innerHTML = `${renderMainView()}${renderLocalKnowledgePickerInputs()}${state.projectCreationOpen ? renderProjectCreationModal() : ''}${state.issueCreationOpen ? renderIssueCreationModal() : ''}${state.projectGroupChatOpen ? renderProjectGroupChatModal() : ''}${state.projectGroupMembersModal ? renderProjectGroupMembersModal() : ''}${state.projectGroupActionModal ? renderProjectGroupActionModal() : ''}${renderLocalKnowledgeModal()}${renderProjectSessionImportModal()}${renderMeetingOverlays()}${renderSnackRecordOverlays()}`;
   renderIcons();
   syncProjectRenameFocus();
   syncProjectCreationFocus();
@@ -1228,7 +1238,6 @@ function getSecondaryTabs() {
     return [
       { value: 'square', label: '员工广场', active: state.agentTab === 'square', attr: 'data-agent-tab' },
       { value: 'resources', label: '技能与工具', active: state.agentTab === 'resources', attr: 'data-agent-tab' },
-      { value: 'knowledge', label: '我的知识库', active: state.agentTab === 'knowledge', attr: 'data-agent-tab' },
     ];
   }
   return [];
@@ -1238,6 +1247,7 @@ function renderSecondaryTabs() {
   const tabs = getSecondaryTabs();
   secondaryTabs.hidden = tabs.length === 0;
   topbar.classList.toggle('has-secondary-tabs', tabs.length > 0);
+  topbar.classList.toggle('agent-workspace-topbar', state.view === 'agents');
   secondaryTabs.innerHTML = tabs.map((tab) => `
     <button class="${tab.active ? 'active' : ''}" ${tab.attr}="${tab.value}">
       <span>${tab.label}</span>
@@ -1372,16 +1382,12 @@ function renderProjectSessions(project) {
         || (session.kind === 'record-summary' && state.view === 'recordSummary' && state.snackRecordSummaryProjectId === project.id),
     })),
   ];
-  const expanded = state.expandedSessionLists.includes(project.id);
-  const visibleSessions = expanded ? allSessions : allSessions.slice(0, 3);
-  const hiddenCount = Math.max(0, allSessions.length - visibleSessions.length);
   return `
     <button class="history-session project-board-session ${boardActive ? 'active' : ''}" data-project-open="${escapeAttribute(project.id)}">
       <i data-lucide="kanban-square"></i>
       <span>项目看板</span>
     </button>
-    ${visibleSessions.map((session) => renderHistorySession(project, session)).join('')}
-    ${allSessions.length > 3 ? renderHistoryMore(project, expanded, hiddenCount) : ''}
+    ${allSessions.map((session) => renderHistorySession(project, session)).join('')}
   `;
 }
 
@@ -1469,14 +1475,6 @@ function renderSidebarGroupAvatarStack(project, session) {
         </span>
       `).join('')}
     </span>
-  `;
-}
-
-function renderHistoryMore(project, expanded, hiddenCount) {
-  return `
-    <button class="history-more" data-project-sessions="${project.id}">
-      <span>${expanded ? '收起对话' : '查看全部'}</span>
-    </button>
   `;
 }
 
@@ -2081,7 +2079,7 @@ function renderProjectCollaboratorSection(project, type, members) {
       </header>
       <div class="project-card-member-list">
         ${members.length
-    ? members.map((member) => renderProjectCollaboratorNameRow(member, managing)).join('')
+    ? members.map((member) => renderProjectCollaboratorNameRow(project, member, managing)).join('')
     : `<p class="project-card-member-empty">尚未添加${title}</p>`}
       </div>
       ${managing ? `
@@ -2113,14 +2111,47 @@ function renderProjectCollaboratorSection(project, type, members) {
   `;
 }
 
-function renderProjectCollaboratorNameRow(member, managing) {
+function getProjectMemberPermission(project, name) {
+  if (name === currentUserName) return 'manage';
+  return project.memberPermissions?.[name] === 'manage' ? 'manage' : 'use';
+}
+
+function getProjectMemberPermissionLabel(permission) {
+  return permission === 'manage' ? '可管理' : '可使用';
+}
+
+function renderProjectCollaboratorNameRow(project, member, managing) {
   const canRemove = managing && member.name !== currentUserName && member.name !== 'Snack';
+  const permission = member.isAgent ? null : getProjectMemberPermission(project, member.name);
+  const permissionOpen = state.projectCollaboratorPermissionMember === member.name;
+  const permissionEditable = Boolean(permission && managing && member.name !== currentUserName);
   return `
     <article class="project-collaborator-name-row">
       <span class="group-member-avatar ${member.isAgent ? 'agent' : 'human'}">${escapeHtml(member.name.slice(0, 1))}</span>
       <strong>${escapeHtml(member.name)}</strong>
+      ${permission ? `
+        <span class="project-collaborator-permission ${permissionEditable ? 'editable' : ''} ${permissionOpen ? 'open' : ''}">
+          ${permissionEditable ? `
+            <button type="button" data-project-collaborator-permission="${escapeAttribute(member.name)}" aria-haspopup="menu" aria-expanded="${permissionOpen}">
+              <span>${getProjectMemberPermissionLabel(permission)}</span><i data-lucide="chevron-down"></i>
+            </button>
+            ${permissionOpen ? `
+              <span class="project-collaborator-permission-menu" role="menu" aria-label="修改 ${escapeAttribute(member.name)} 的项目权限">
+                <button class="${permission === 'manage' ? 'selected' : ''}" type="button" role="menuitem" data-project-collaborator-permission-value="manage" data-project-collaborator-permission-member="${escapeAttribute(member.name)}">
+                  <i data-lucide="${permission === 'manage' ? 'circle-check-big' : 'shield-check'}"></i>
+                  <span><strong>可管理</strong><small>可编辑项目配置和管理成员</small></span>
+                </button>
+                <button class="${permission === 'use' ? 'selected' : ''}" type="button" role="menuitem" data-project-collaborator-permission-value="use" data-project-collaborator-permission-member="${escapeAttribute(member.name)}">
+                  <i data-lucide="${permission === 'use' ? 'circle-check-big' : 'eye'}"></i>
+                  <span><strong>可使用</strong><small>可访问项目内容并参与协作</small></span>
+                </button>
+              </span>
+            ` : ''}
+          ` : `<span class="project-collaborator-permission-label">${getProjectMemberPermissionLabel(permission)}</span>`}
+        </span>
+      ` : ''}
       ${canRemove ? `
-        <button type="button" data-member-manager-remove="${escapeAttribute(member.name)}" aria-label="移除 ${escapeAttribute(member.name)}">
+        <button class="project-collaborator-remove" type="button" data-member-manager-remove="${escapeAttribute(member.name)}" aria-label="移除 ${escapeAttribute(member.name)}">
           <i data-lucide="x"></i>
         </button>
       ` : ''}
@@ -2240,8 +2271,10 @@ function syncProjectSessionImportSearchFocus() {
 function attachProjectSessionAsset(projectId, sessionId) {
   const project = getProjectById(projectId);
   const session = projectSessionImportOptions.find((item) => item.id === sessionId);
-  if (!project || !session || (project.sessionAssets || []).some((item) => item.sourceSessionId === session.id)) return;
-  project.sessionAssets = [...(project.sessionAssets || []), {
+  const editingInProjectConfig = state.projectCreationOpen && state.projectEditingId === projectId;
+  const currentAssets = editingInProjectConfig ? state.projectCreationSessionAssets : (project?.sessionAssets || []);
+  if (!project || !session || currentAssets.some((item) => item.sourceSessionId === session.id)) return;
+  const asset = {
     id: `session-asset:${session.id}`,
     sourceSessionId: session.id,
     name: session.title,
@@ -2249,10 +2282,13 @@ function attachProjectSessionAsset(projectId, sessionId) {
     sourceProject: session.project,
     preview: session.preview,
     updated: session.updated,
+    updatedBy: currentUserName,
     accent: session.accent,
     visibility: 'private',
     sharedProjectIds: [],
-  }];
+  };
+  if (editingInProjectConfig) state.projectCreationSessionAssets = [...currentAssets, asset];
+  else project.sessionAssets = [...currentAssets, asset];
   state.projectSessionImportProjectId = null;
   state.projectSessionImportQuery = '';
   render();
@@ -2263,7 +2299,10 @@ function renderProjectSessionImportModal() {
   const project = getProjectById(state.projectSessionImportProjectId);
   if (!project) return '';
   const query = state.projectSessionImportQuery.trim().toLowerCase();
-  const attachedIds = new Set((project.sessionAssets || []).map((item) => item.sourceSessionId));
+  const sessionAssets = state.projectCreationOpen && state.projectEditingId === project.id
+    ? state.projectCreationSessionAssets
+    : (project.sessionAssets || []);
+  const attachedIds = new Set(sessionAssets.map((item) => item.sourceSessionId));
   const sessions = projectSessionImportOptions.filter((session) => !query
     || `${session.title} ${session.project} ${session.preview}`.toLowerCase().includes(query));
   return `
@@ -2337,9 +2376,11 @@ function getProjectAssetVisibility(projectId, asset) {
 
 function renderProjectAssetVisibilityControl(project, asset) {
   const visibility = getProjectAssetVisibility(project.id, asset);
+  const visibilityLabel = visibility === 'project' ? '项目成员可见' : '仅我可见';
   return `
     <label class="project-asset-visibility-control" title="管理可见性">
-      <i data-lucide="${visibility === 'project' ? 'users' : 'lock-keyhole'}"></i>
+      <i data-lucide="eye"></i>
+      <span>${visibilityLabel}</span>
       <select
         data-project-asset-visibility
         data-project-id="${escapeAttribute(project.id)}"
@@ -2426,48 +2467,69 @@ function renderProjectAssetShareDrawer(project, anchor, anchorAssetId = '') {
   `;
 }
 
-function renderProjectAssetBulkToolbar(project, assetIds) {
-  if (!assetIds.length) return '';
-  const selectedIds = getProjectAssetSelection(project.id).filter((assetId) => assetIds.includes(assetId));
-  const allSelected = selectedIds.length === assetIds.length;
-  const disabled = selectedIds.length ? '' : 'disabled';
+function ensureProjectSourceAssets(project) {
+  if (!project) return [];
+  project.sourceFolders = (project.sourceFolders || []).map((folder, index) => {
+    const asset = typeof folder === 'string' ? { name: folder } : folder;
+    if (!asset.id) asset.id = `source-asset:${project.id}:${index}`;
+    if (!asset.kind) asset.kind = 'local-files';
+    return asset;
+  });
+  return project.sourceFolders;
+}
+
+function getProjectAssetListMeta(project, asset) {
+  let type = '本地文件';
+  if (asset.kind === 'wiki-topic') {
+    type = String(asset.source || '').includes('语雀') ? '语雀' : 'LLM Wiki';
+  } else if (asset.kind === 'session') {
+    type = '会话';
+  } else if (asset.kind === 'meeting') {
+    type = '会议纪要';
+  }
+  return {
+    type,
+    updated: asset.updated || project.updated || '刚刚',
+    updatedBy: asset.updatedBy || currentUserName,
+  };
+}
+
+function renderProjectAssetListRow(project, asset, selected) {
+  const meta = getProjectAssetListMeta(project, asset);
   return `
-    <section class="project-asset-bulk-toolbar" aria-label="资产批量操作">
-      <label class="project-asset-select-all">
-        <input type="checkbox" data-project-asset-select-all="${escapeAttribute(project.id)}" ${allSelected ? 'checked' : ''} />
-        <span>${selectedIds.length ? `已选 ${selectedIds.length} 项` : '全选'}</span>
+    <article class="project-asset-table-row" role="row">
+      <label class="project-asset-selection" role="cell">
+        <input type="checkbox" data-project-asset-select data-project-id="${escapeAttribute(project.id)}" data-project-asset-id="${escapeAttribute(asset.id)}" aria-label="选择${escapeAttribute(asset.name)}" ${selected ? 'checked' : ''} />
       </label>
-      <div class="project-asset-bulk-actions">
-        <button type="button" data-project-asset-bulk-action="share" data-project-id="${escapeAttribute(project.id)}" ${disabled}><i data-lucide="share-2"></i>分享</button>
-        <label class="project-asset-bulk-visibility ${selectedIds.length ? '' : 'disabled'}">
-          <i data-lucide="eye"></i>
-          <select data-project-asset-bulk-visibility="${escapeAttribute(project.id)}" ${disabled} aria-label="批量管理可见性">
-            <option value="">管理可见性</option>
-            <option value="private">设为仅我可见</option>
-            <option value="project">设为项目成员可见</option>
-          </select>
-          <i data-lucide="chevron-down"></i>
-        </label>
-        <button class="danger" type="button" data-project-asset-bulk-action="delete" data-project-id="${escapeAttribute(project.id)}" ${disabled}><i data-lucide="trash-2"></i>删除</button>
+      <strong class="project-asset-name" role="cell" title="${escapeAttribute(asset.name)}">${escapeHtml(asset.name)}</strong>
+      <span class="project-asset-type" role="cell">${escapeHtml(meta.type)}</span>
+      <time role="cell">${escapeHtml(meta.updated)}</time>
+      <span class="project-asset-updater" role="cell">${escapeHtml(meta.updatedBy)}</span>
+      <div class="project-asset-permission" role="cell">
+        ${renderProjectAssetVisibilityControl(project, asset)}
       </div>
-    </section>
-    ${renderProjectAssetShareDrawer(project, 'bulk')}
+      <div class="project-asset-row-actions" role="cell">
+        <button type="button" data-project-asset-action="share" data-project-id="${escapeAttribute(project.id)}" data-project-asset-id="${escapeAttribute(asset.id)}"><i data-lucide="share-2"></i><span>分享</span></button>
+        <button class="danger" type="button" data-project-asset-action="delete" data-project-id="${escapeAttribute(project.id)}" data-project-asset-id="${escapeAttribute(asset.id)}"><i data-lucide="trash-2"></i><span>删除</span></button>
+      </div>
+      ${renderProjectAssetShareDrawer(project, 'row', asset.id)}
+    </article>
   `;
 }
 
 function renderProjectKnowledgePage(project) {
   const wikiTopics = project.wikiTopics || [];
   const sessionAssets = project.sessionAssets || [];
-  const sourceFolders = (project.sourceFolders || []).map((folder) => (
-    typeof folder === 'string' ? { name: folder, fileCount: null } : folder
-  ));
-  const resourceCount = wikiTopics.length + sessionAssets.length + sourceFolders.length;
-  const selectableAssetIds = [
-    ...wikiTopics.map((topicName) => getProjectWikiTopicAssetId(topicName)),
-    ...sessionAssets.map((session) => session.id),
-    ...sourceFolders.filter((folder) => folder.kind === 'local-files').map((folder) => folder.id),
+  const sourceFolders = ensureProjectSourceAssets(project);
+  const assets = [
+    ...wikiTopics.map((topicName) => getProjectWikiTopicAsset(project.id, getProjectWikiTopicAssetId(topicName))).filter(Boolean),
+    ...sessionAssets,
+    ...sourceFolders,
   ];
+  const resourceCount = assets.length;
+  const selectableAssetIds = assets.map((asset) => asset.id);
   const selectedAssetIds = getProjectAssetSelection(project.id);
+  const allSelected = resourceCount > 0 && selectableAssetIds.every((assetId) => selectedAssetIds.includes(assetId));
   return `
     <section class="project-info-tab-page project-knowledge-page">
       <header class="project-info-tab-header">
@@ -2477,66 +2539,28 @@ function renderProjectKnowledgePage(project) {
           <button class="project-info-config-entry project-knowledge-action-button" type="button" data-open-local-knowledge="${escapeAttribute(project.id)}"><i data-lucide="folder-up"></i><span>添加本地文件</span></button>
         </div>
       </header>
-      ${renderProjectAssetBulkToolbar(project, selectableAssetIds)}
-      <div class="project-detail-resource-list project-knowledge-resource-list" role="list" aria-label="已关联知识">
-          ${wikiTopics.map((topicName) => {
-    const topic = projectWikiTopicOptions.find((item) => item.name === topicName);
-    const icon = topic?.type === 'llm-wiki' ? 'database' : 'book-open-text';
-    const source = topic?.source || '云端知识';
-    const assetId = getProjectWikiTopicAssetId(topicName);
-    const asset = getProjectWikiTopicAsset(project.id, assetId) || { id: assetId, name: topicName, kind: 'wiki-topic', topicName };
-    const selected = selectedAssetIds.includes(assetId);
-    return `<article class="project-local-asset-row project-wiki-topic-row" role="listitem">
-      <label class="project-asset-selection"><input type="checkbox" data-project-asset-select data-project-id="${escapeAttribute(project.id)}" data-project-asset-id="${escapeAttribute(assetId)}" aria-label="选择${escapeAttribute(topicName)}" ${selected ? 'checked' : ''} /></label>
-      <i data-lucide="${icon}"></i><span><strong>${escapeHtml(topicName)}</strong><small>${escapeHtml(source)}</small></span>
-      <div class="project-local-asset-actions">
-        ${renderProjectAssetVisibilityControl(project, asset)}
-        ${renderProjectAssetMoreMenu(project, asset)}
-      </div>
-      ${renderProjectAssetShareDrawer(project, 'row', assetId)}
-    </article>`;
-  }).join('')}
-          ${sessionAssets.map((session) => {
-    const selected = selectedAssetIds.includes(session.id);
-    return `<article class="project-local-asset-row project-session-asset-row" role="listitem">
-      <label class="project-asset-selection"><input type="checkbox" data-project-asset-select data-project-id="${escapeAttribute(project.id)}" data-project-asset-id="${escapeAttribute(session.id)}" aria-label="选择${escapeAttribute(session.name)}" ${selected ? 'checked' : ''} /></label>
-      <i data-lucide="messages-square"></i><span><strong>${escapeHtml(session.name)}</strong><small>${escapeHtml(session.sourceProject)} · ${escapeHtml(session.preview)}${session.shared ? ' · 已共享' : ''}</small></span>
-      <div class="project-local-asset-actions">
-        ${renderProjectAssetVisibilityControl(project, session)}
-        ${renderProjectAssetMoreMenu(project, session)}
-      </div>
-      ${renderProjectAssetShareDrawer(project, 'row', session.id)}
-    </article>`;
-  }).join('')}
-          ${sourceFolders.map((folder) => {
-    const isMeeting = folder.kind === 'meeting';
-    const isLocalFiles = folder.kind === 'local-files';
-    const icon = isMeeting ? 'file-text' : (isLocalFiles ? 'files' : 'folder');
-    const label = folder.label || (isMeeting ? '会议纪要' : (Number.isFinite(folder.fileCount) ? `${folder.fileCount} 个文件` : '本地文件夹'));
-    if (!isLocalFiles) return `<span role="listitem"><i data-lucide="${icon}"></i><strong>${escapeHtml(folder.name)}</strong><small>${label}</small></span>`;
-    const transcriptionAction = folder.audioCount ? (folder.transcriptionStatus === 'complete'
-      ? `<button type="button" class="project-asset-text-action is-complete" data-project-asset-action="meeting-input" data-project-id="${escapeAttribute(project.id)}" data-project-asset-id="${escapeAttribute(folder.id)}" aria-label="生成纪要" title="生成纪要"><i data-lucide="file-text"></i><span>生成纪要</span></button>`
-      : `<button type="button" class="project-asset-text-action" data-project-asset-action="transcribe" data-project-id="${escapeAttribute(project.id)}" data-project-asset-id="${escapeAttribute(folder.id)}" aria-label="转写" title="转写"><i data-lucide="file-audio"></i><span>转写</span></button>`)
-      : '';
-    const selected = selectedAssetIds.includes(folder.id);
-    return `<article class="project-local-asset-row" role="listitem">
-      <label class="project-asset-selection"><input type="checkbox" data-project-asset-select data-project-id="${escapeAttribute(project.id)}" data-project-asset-id="${escapeAttribute(folder.id)}" aria-label="选择${escapeAttribute(folder.name)}" ${selected ? 'checked' : ''} /></label>
-      <i data-lucide="${icon}"></i><span><strong>${escapeHtml(folder.name)}</strong><small>${label}</small></span>
-      <div class="project-local-asset-actions">
-        ${renderProjectAssetVisibilityControl(project, folder)}
-        ${transcriptionAction}
-        ${renderProjectAssetMoreMenu(project, folder)}
-      </div>
-      ${renderProjectAssetShareDrawer(project, 'row', folder.id)}
-    </article>`;
-  }).join('')}
-          ${resourceCount ? '' : `
+      <div class="project-asset-table" role="table" aria-label="项目资产列表">
+        ${resourceCount ? `
+          <div class="project-asset-table-head" role="row">
+            <label class="project-asset-table-select-all" role="columnheader">
+              <input type="checkbox" data-project-asset-select-all="${escapeAttribute(project.id)}" ${allSelected ? 'checked' : ''} />
+              <span>全选</span>
+            </label>
+            <span role="columnheader">资产名称</span>
+            <span role="columnheader">类型</span>
+            <span role="columnheader">更新时间</span>
+            <span role="columnheader">更新人</span>
+            <span role="columnheader">权限</span>
+            <span role="columnheader">操作</span>
+          </div>
+          ${assets.map((asset) => renderProjectAssetListRow(project, asset, selectedAssetIds.includes(asset.id))).join('')}
+        ` : `
             <div class="project-knowledge-tab-empty">
               <span><i data-lucide="book-open-text"></i></span>
               <strong>尚未关联知识</strong>
               <p>点击“添加知识”挂载 Topic，或添加本地文件。</p>
             </div>
-          `}
+        `}
       </div>
     </section>
   `;
@@ -2861,6 +2885,94 @@ function getProjectGroupContext(projectId, groupId) {
   return project && group ? { project, group } : null;
 }
 
+function renderProjectGroupMembersModal() {
+  const modal = state.projectGroupMembersModal;
+  const context = modal ? getProjectGroupContext(modal.projectId, modal.groupId) : null;
+  if (!modal || !context) return '';
+  const { project, group } = context;
+  const directory = new Map(getProjectGroupChatDirectory(project).map((member) => [member.name, member]));
+  const members = (group.participants || []).map((name) => directory.get(name) || {
+    name,
+    role: name === 'Snack' ? 'Snack 是你的工作伙伴' : '项目群成员',
+    isAgent: name === 'Snack' || name.endsWith('Agent'),
+  });
+  return `
+    <section class="project-group-members-backdrop" data-project-group-members-backdrop role="presentation">
+      <section class="project-group-members-modal" role="dialog" aria-modal="true" aria-labelledby="projectGroupMembersTitle">
+        <header>
+          <div>
+            <h2 id="projectGroupMembersTitle">人员管理</h2>
+            <p>管理当前群聊中的用户、Agent 和机器人，历史消息会保留</p>
+          </div>
+          <span>
+            <button class="project-group-members-add" type="button" data-project-group-members-add>
+              <i data-lucide="plus"></i><span>添加成员</span>
+            </button>
+            <button class="project-group-members-close" type="button" data-project-group-members-close aria-label="关闭人员管理">
+              <i data-lucide="x"></i>
+            </button>
+          </span>
+        </header>
+        <div class="project-group-members-list">
+          ${members.map((member) => {
+    const isCreator = member.name === currentUserName;
+    const isSnack = member.name === 'Snack';
+    return `
+            <article class="project-group-members-row">
+              <span class="group-member-avatar ${member.isAgent ? 'agent' : 'human'}">${isSnack ? '<i data-lucide="sparkles"></i>' : escapeHtml(member.name.slice(0, 1))}</span>
+              <span class="project-group-members-copy">
+                <strong>${escapeHtml(member.name)}${member.isAgent ? '<em>Agent</em>' : ''}</strong>
+                ${member.isAgent && member.role ? `<small>${escapeHtml(member.role)}</small>` : ''}
+              </span>
+              ${isCreator
+    ? '<small class="project-group-member-fixed">创建者</small>'
+    : isSnack
+      ? '<small class="project-group-member-fixed">默认加入</small>'
+      : `
+                <button class="project-group-member-remove" type="button" data-project-group-members-remove="${escapeAttribute(member.name)}">
+                  <i data-lucide="log-out"></i><span>移除</span>
+                </button>
+              `}
+            </article>
+          `;
+  }).join('')}
+        </div>
+      </section>
+    </section>
+  `;
+}
+
+function openProjectGroupMembersModal(projectId, groupId) {
+  if (!getProjectGroupContext(projectId, groupId)) return;
+  state.projectGroupChatOpen = false;
+  state.projectGroupMembersModal = { projectId, groupId };
+  state.groupHeaderMenuOpen = false;
+  render();
+}
+
+function closeProjectGroupMembersModal() {
+  state.projectGroupMembersModal = null;
+  render();
+}
+
+function addProjectGroupMemberFromManager() {
+  const modal = state.projectGroupMembersModal;
+  if (!modal) return;
+  state.projectGroupMembersModal = null;
+  openProjectGroupChat(modal.projectId, modal.groupId);
+}
+
+function removeProjectGroupMember(name) {
+  const modal = state.projectGroupMembersModal;
+  const context = modal ? getProjectGroupContext(modal.projectId, modal.groupId) : null;
+  if (!context || name === currentUserName || name === 'Snack') return;
+  if (!(context.group.participants || []).includes(name)) return;
+  context.group.participants = context.group.participants.filter((memberName) => memberName !== name);
+  context.group.updatedAt = '刚刚';
+  render();
+  showToast(`${name} 已移出群聊`);
+}
+
 function renderProjectGroupActionModal() {
   const modal = state.projectGroupActionModal;
   const context = modal?.projectId
@@ -2961,7 +3073,7 @@ function runProjectGroupAction(action, groupId) {
   if (!context) return;
   const { project, group } = context;
   if (action === 'members') {
-    openProjectGroupChat(project.id, group.id);
+    openProjectGroupMembersModal(project.id, group.id);
     return;
   }
   if (['rename', 'share', 'dissolve'].includes(action)) {
@@ -3014,6 +3126,7 @@ function toggleProjectCollaboratorManager(type) {
   state.projectCollaboratorManagerType = closing ? null : normalizedType;
   state.projectCollaboratorPickerType = null;
   state.projectCollaboratorQuery = '';
+  state.projectCollaboratorPermissionMember = null;
   if (!refreshProjectCollaboratorsPage()) render();
 }
 
@@ -3022,7 +3135,26 @@ function toggleProjectCollaboratorPicker(type) {
   state.projectCollaboratorManagerType = normalizedType;
   state.projectCollaboratorPickerType = state.projectCollaboratorPickerType === normalizedType ? null : normalizedType;
   state.projectCollaboratorQuery = '';
+  state.projectCollaboratorPermissionMember = null;
   if (!refreshProjectCollaboratorsPage({ focusSearch: Boolean(state.projectCollaboratorPickerType) })) render();
+}
+
+function toggleProjectCollaboratorPermission(name) {
+  const project = getActiveProject();
+  if (!project || name === currentUserName || !(project.members || []).includes(name)) return;
+  state.projectCollaboratorPermissionMember = state.projectCollaboratorPermissionMember === name ? null : name;
+  if (!refreshProjectCollaboratorsPage()) render();
+}
+
+function setProjectCollaboratorPermission(name, permission) {
+  const project = getActiveProject();
+  if (!project || name === currentUserName || !(project.members || []).includes(name)) return;
+  const nextPermission = permission === 'manage' ? 'manage' : 'use';
+  project.memberPermissions = { ...(project.memberPermissions || {}), [name]: nextPermission };
+  project.updated = '现在';
+  state.projectCollaboratorPermissionMember = null;
+  if (!refreshProjectCollaboratorsPage()) render();
+  showToast(`${name} 已设为${getProjectMemberPermissionLabel(nextPermission)}`);
 }
 
 function syncProjectCollaboratorSearchFocus() {
@@ -3042,6 +3174,7 @@ function addProjectCollaborator(name) {
     project.agents = [...new Set([...(project.agents || []), member.name])];
   } else {
     project.members = [...new Set([...(project.members || []), member.name])];
+    project.memberPermissions = { ...(project.memberPermissions || {}), [member.name]: 'use' };
   }
   const rememberedPeople = new Map(project.rememberedPeople || []);
   rememberedPeople.set(member.name, getCollaboratorDefaultDesc(member.name, member.isAgent));
@@ -4490,7 +4623,7 @@ function runGroupHeaderAction(action, projectId, groupId) {
   if (!context) return;
   state.groupHeaderMenuOpen = false;
   if (action === 'members') {
-    openProjectGroupChat(projectId, groupId);
+    openProjectGroupMembersModal(projectId, groupId);
     return;
   }
   if (action === 'custom-snack') {
@@ -4708,6 +4841,7 @@ function addProjectMember(name) {
     project.agents = [...new Set([...(project.agents || []), member.name])];
   } else {
     project.members = [...new Set([...(project.members || []), member.name])];
+    project.memberPermissions = { ...(project.memberPermissions || {}), [member.name]: 'use' };
   }
   const rememberedPeople = new Map(project.rememberedPeople || []);
   rememberedPeople.set(member.name, getCollaboratorDefaultDesc(member.name, member.isAgent));
@@ -4729,8 +4863,14 @@ function removeProjectMemberFromProject(name) {
   project.agents = (project.agents || []).filter((memberName) => memberName !== name);
   project.rememberedPeople = (project.rememberedPeople || []).filter(([memberName]) => memberName !== name);
   project.agentStatuses = (project.agentStatuses || []).filter(([memberName]) => memberName !== name);
+  if (project.memberPermissions) {
+    const remainingPermissions = { ...project.memberPermissions };
+    delete remainingPermissions[name];
+    project.memberPermissions = remainingPermissions;
+  }
   project.updated = '现在';
   state.memberManagerQuery = '';
+  state.projectCollaboratorPermissionMember = null;
   if (!refreshProjectCollaboratorsPage()) render();
   showToast(`${name} 已移出项目`);
 }
@@ -5648,18 +5788,24 @@ function renderLooseConversation() {
 
 function renderAgents() {
   if (state.agentTab === 'resources') return renderResourceWorkspace();
-  if (state.agentTab === 'knowledge') return renderKnowledgeWorkspace();
-  return `<section class="agent-grid">${agents.map(renderAgentCard).join('')}</section>`;
+  return `<section class="agent-employees-page"><div class="agent-employee-grid" role="list">${agents.map(renderAgentCard).join('')}</div></section>`;
 }
 
 function renderAgentCard(agent) {
+  const icon = {
+    Snack: 'sparkles',
+    '投放监控 Agent': 'chart-no-axes-combined',
+    '研发交付 Agent': 'code-2',
+    '用户研究 Agent': 'search',
+    '数据分析 Agent': 'chart-pie',
+    '会议纪要 Agent': 'notebook-tabs',
+  }[agent.name] || 'bot';
   return `
-    <article class="agent-card">
-      <span class="agent-icon"><i data-lucide="bot"></i></span>
-      <h3>${agent.name}</h3>
-      <p>${agent.desc}</p>
-      <span class="tag">${agent.last}</span>
-      <button class="secondary-button" data-agent-chat="${agent.name}">发起会话</button>
+    <article class="agent-employee-card" role="listitem">
+      <span class="agent-employee-icon"><i data-lucide="${icon}"></i></span>
+      <h2>${escapeHtml(agent.name)}</h2>
+      <p title="${escapeAttribute(agent.desc)}">${escapeHtml(agent.desc)}</p>
+      <button type="button" data-agent-chat="${escapeAttribute(agent.name)}" aria-label="和 ${escapeAttribute(agent.name)} 对话">发起会话</button>
     </article>
   `;
 }
@@ -5787,9 +5933,14 @@ function createLocalKnowledgeAsset() {
   const asset = {
     id: `local-knowledge-${Date.now()}`, name: getLocalKnowledgeAssetName(), fileCount: files.length, kind: 'local-files',
     contentSummary, audioCount: summary.audio, transcriptionStatus: summary.audio ? 'available' : null,
-    label: `${contentSummary} · 仅本地读取`, visibility: 'private', cloudSynced: false, sharedProjectIds: [],
+    label: `${contentSummary} · 仅本地读取`, updated: '刚刚', updatedBy: currentUserName,
+    visibility: 'private', cloudSynced: false, sharedProjectIds: [],
   };
-  project.sourceFolders = [...(project.sourceFolders || []), asset];
+  if (state.projectCreationOpen && state.projectEditingId === project.id) {
+    state.projectCreationFolders = [...(state.projectCreationFolders || []), asset];
+  } else {
+    project.sourceFolders = [...(project.sourceFolders || []), asset];
+  }
   state.localKnowledgeAssetId = asset.id;
   state.localKnowledgeModalOpen = false;
   render();
@@ -5807,7 +5958,7 @@ function submitLocalKnowledge() {
 }
 
 function getProjectLocalAsset(projectId, assetId) {
-  return getProjectById(projectId)?.sourceFolders?.find((item) => item.id === assetId && item.kind === 'local-files') || null;
+  return ensureProjectSourceAssets(getProjectById(projectId)).find((item) => item.id === assetId) || null;
 }
 
 function getProjectAsset(projectId, assetId) {
@@ -7892,6 +8043,8 @@ function renderProjectCreationModal() {
           ${renderProjectMembersModule()}
 
           ${renderProjectKnowledgeModule()}
+
+          ${renderProjectLocalWorkspaceModule()}
         </section>
         <footer class="project-create-footer">
           <button class="secondary-button" type="button" data-project-modal-close>取消</button>
@@ -7918,8 +8071,8 @@ function renderProjectMembersModule() {
         <span class="project-edit-module-actions">
           <em>${selectedCount} 位</em>
           <button type="button" data-project-members-add aria-expanded="${editorOpen ? 'true' : 'false'}">
-            <i data-lucide="${editorOpen ? 'chevron-up' : 'plus'}"></i>
-            <span>${editorOpen ? '收起' : '添加'}</span>
+            <span>${editorOpen ? '收起' : '展开'}</span>
+            <i data-lucide="${editorOpen ? 'chevron-up' : 'chevron-down'}"></i>
           </button>
         </span>
       </header>
@@ -7945,75 +8098,120 @@ function toggleProjectMembersEditor() {
 function renderProjectKnowledgeModule() {
   const topics = state.projectCreationWikiTopics || [];
   const folders = state.projectCreationFolders || [];
-  const resourceCount = topics.length + folders.length;
+  const sessionAssets = state.projectCreationSessionAssets || [];
+  const resourceCount = topics.length + folders.length + sessionAssets.length;
   const editorOpen = state.projectKnowledgeEditorOpen;
+  const editingProject = getProjectById(state.projectEditingId);
+  const projectId = editingProject?.id || '';
   return `
-    <section class="project-edit-module project-edit-resources ${resourceCount || editorOpen ? 'expanded' : ''}" data-project-knowledge-module>
+    <section class="project-edit-module project-edit-resources ${editorOpen ? 'expanded' : ''}" data-project-knowledge-module>
       <header class="project-edit-module-header">
         <div class="project-edit-module-title">
           <span><i data-lucide="paperclip"></i></span>
           <div>
-            <strong>关联知识 <em>可选</em></strong>
+            <strong>关联资产 <em>可选</em></strong>
             <small>连接语雀空间、LLM Wiki 或本地项目文件</small>
           </div>
         </div>
         <span class="project-edit-module-actions">
           ${resourceCount ? `<em>${resourceCount} 项</em>` : ''}
           <button type="button" data-project-knowledge-add aria-expanded="${editorOpen ? 'true' : 'false'}">
-            <i data-lucide="${editorOpen ? 'chevron-up' : 'plus'}"></i>
-            <span>${editorOpen ? '收起' : '添加'}</span>
+            <span>${editorOpen ? '收起' : '展开'}</span>
+            <i data-lucide="${editorOpen ? 'chevron-up' : 'chevron-down'}"></i>
           </button>
         </span>
       </header>
-      ${resourceCount || editorOpen ? `
+      ${editorOpen ? `
         <div class="project-edit-module-body project-edit-resource-body">
+          <div class="project-config-asset-actions" aria-label="添加项目资产">
+            ${renderProjectWikiTopicPicker()}
+            <button type="button" ${projectId ? `data-project-session-import-open="${escapeAttribute(projectId)}"` : 'disabled title="保存项目后可导入会话"'}>
+              <i data-lucide="messages-square"></i><span>导入会话</span>
+            </button>
+            <button type="button" ${projectId ? `data-open-local-knowledge="${escapeAttribute(projectId)}"` : 'disabled title="保存项目后可添加本地文件"'}>
+              <i data-lucide="folder-up"></i><span>添加本地文件</span>
+            </button>
+          </div>
           ${resourceCount ? `
-            <div class="project-knowledge-selected" aria-label="已关联知识">
-              ${topics.map((topicName) => {
-    const topic = projectWikiTopicOptions.find((option) => option.name === topicName);
-    return `
-                  <span>
-                    <i data-lucide="${topic?.type === 'yuque' ? 'book-open-text' : 'database'}"></i>
-                    <strong>${escapeHtml(topicName)}</strong>
-                    <small>${escapeHtml(topic?.source || '云端知识')}</small>
-                  </span>
-                `;
-  }).join('')}
+            <div class="project-config-asset-selection" aria-label="已关联资产">
+              ${topics.map((topicName) => `
+                <span>
+                  <strong>${escapeHtml(topicName)}</strong><small>知识</small>
+                  <button type="button" aria-label="移除 ${escapeAttribute(topicName)}" data-project-config-asset-remove="wiki-topic" data-project-config-asset-id="${escapeAttribute(topicName)}"><i data-lucide="x"></i></button>
+                </span>
+              `).join('')}
+              ${sessionAssets.map((session) => `
+                <span>
+                  <strong>${escapeHtml(session.name)}</strong><small>会话</small>
+                  <button type="button" aria-label="移除 ${escapeAttribute(session.name)}" data-project-config-asset-remove="session" data-project-config-asset-id="${escapeAttribute(session.id)}"><i data-lucide="x"></i></button>
+                </span>
+              `).join('')}
               ${folders.map((folder) => `
                 <span>
-                  <i data-lucide="folder"></i>
-                  <strong>${escapeHtml(folder.name)}</strong>
-                  <small>本地知识</small>
+                  <strong>${escapeHtml(folder.name)}</strong><small>本地文件</small>
+                  <button type="button" aria-label="移除 ${escapeAttribute(folder.name)}" data-project-config-asset-remove="folder" data-project-config-asset-id="${escapeAttribute(folder.name)}"><i data-lucide="x"></i></button>
                 </span>
               `).join('')}
             </div>
-          ` : ''}
-          ${editorOpen ? `
-            <div class="project-knowledge-editor">
-              <section class="project-knowledge-source cloud">
-                <header>
-                  <span><i data-lucide="cloud"></i></span>
-                  <div><strong>云端知识</strong><small>选择语雀空间或已经构建好的 LLM Wiki</small></div>
-                </header>
-                ${renderProjectWikiTopicPicker()}
-              </section>
-              <section class="project-knowledge-source local">
-                <header>
-                  <span><i data-lucide="folder"></i></span>
-                  <div><strong>本地知识</strong><small>关联电脑上的项目资料、文档或代码目录</small></div>
-                </header>
-                <aside class="project-desktop-access-note">
-                  <i data-lucide="monitor-down"></i>
-                  <span>Web 端暂不支持选择本地文件夹，请下载 Snack 桌面端后添加。</span>
-                  <button type="button" data-snack-desktop-download>下载桌面端</button>
-                </aside>
-              </section>
-            </div>
-          ` : ''}
+          ` : '<p class="project-config-asset-empty">尚未关联资产，可从上方选择一种方式添加。</p>'}
         </div>
       ` : ''}
     </section>
   `;
+}
+
+function renderProjectLocalWorkspaceModule() {
+  const desktopRuntime = isSnackDesktopRuntime();
+  const promptOpen = state.projectLocalWorkspacePromptOpen;
+  return `
+    <section class="project-edit-module project-edit-local-workspace ${desktopRuntime && promptOpen ? 'expanded' : ''}" data-project-local-workspace-module>
+      <header class="project-edit-module-header">
+        <div class="project-edit-module-title">
+          <span><i data-lucide="hard-drive"></i></span>
+          <div>
+            <strong>关联本地工作区 <em>可选</em></strong>
+            <small>让 Snack 桌面端读取和编辑指定的本地项目目录</small>
+          </div>
+        </div>
+        <span class="project-edit-module-actions">
+          ${desktopRuntime ? `
+            <button type="button" data-project-local-workspace-toggle aria-expanded="${promptOpen}">
+              <span>${promptOpen ? '收起' : '展开'}</span><i data-lucide="chevron-${promptOpen ? 'up' : 'down'}"></i>
+            </button>
+          ` : `
+            <button class="project-local-workspace-download" type="button" data-snack-desktop-download>
+              <i data-lucide="download"></i><span>下载桌面端</span>
+            </button>
+          `}
+        </span>
+      </header>
+      ${desktopRuntime && promptOpen ? `
+        <div class="project-edit-module-body project-local-workspace-body">
+          <div class="project-local-workspace-picker">
+            <span>
+              <strong>尚未关联本地工作区</strong>
+              <small>选择一个本地目录，Snack 将在授权范围内读取和编辑内容</small>
+            </span>
+            <button type="button" data-project-local-workspace-select>
+              <i data-lucide="folder-open"></i><span>选择工作区</span>
+            </button>
+          </div>
+        </div>
+      ` : ''}
+    </section>
+  `;
+}
+
+function toggleProjectLocalWorkspacePrompt() {
+  if (!isSnackDesktopRuntime()) return;
+  state.projectLocalWorkspacePromptOpen = !state.projectLocalWorkspacePromptOpen;
+  const module = document.querySelector('[data-project-local-workspace-module]');
+  if (!(module instanceof HTMLElement)) {
+    render();
+    return;
+  }
+  module.outerHTML = renderProjectLocalWorkspaceModule();
+  renderIcons();
 }
 
 function refreshProjectKnowledgeModule() {
@@ -8287,15 +8485,23 @@ function openProjectCreationModal(projectId = null) {
       .map((member) => ({ name: member.name, isAgent: member.isAgent, role: member.role }))
     : [];
   state.projectCreationWikiTopics = [...(editingProject?.wikiTopics || [])];
+  state.projectCreationSessionAssets = (editingProject?.sessionAssets || []).map((session) => ({ ...session }));
   state.projectWikiTopicPickerOpen = false;
-  state.projectKnowledgeEditorOpen = false;
   state.projectCreationFolders = (editingProject?.sourceFolders || []).map((folder) => (
     typeof folder === 'string' ? { name: folder, fileCount: null } : { ...folder }
   ));
+  state.projectKnowledgeEditorOpen = Boolean(
+    editingProject && (
+      state.projectCreationWikiTopics.length
+      || state.projectCreationSessionAssets.length
+      || state.projectCreationFolders.length
+    ),
+  );
+  state.projectLocalWorkspacePromptOpen = false;
   state.projectMemberQuery = '';
   state.projectMemberPickerOpen = false;
   state.projectMemberPickerType = 'human';
-  state.projectMemberEditorOpen = false;
+  state.projectMemberEditorOpen = Boolean(editingProject && state.projectCreationMembers.length);
   state.openProjectMenuId = null;
   state.openProjectCreateMenuId = null;
   state.modelPickerOpen = false;
@@ -8310,8 +8516,10 @@ function closeProjectCreationModal() {
   state.projectEditingId = null;
   state.projectCreationMembers = [];
   state.projectCreationWikiTopics = [];
+  state.projectCreationSessionAssets = [];
   state.projectWikiTopicPickerOpen = false;
   state.projectKnowledgeEditorOpen = false;
+  state.projectLocalWorkspacePromptOpen = false;
   state.projectCreationFolders = [];
   state.projectMemberQuery = '';
   state.projectMemberPickerOpen = false;
@@ -8323,35 +8531,23 @@ function closeProjectCreationModal() {
 function renderProjectWikiTopicPicker() {
   const selectedTopics = state.projectCreationWikiTopics || [];
   const selectedTopicNames = new Set(selectedTopics);
-  const selectionLabel = selectedTopics.length
-    ? `已选择 ${selectedTopics.join('、')}`
-    : '尚未选择云端知识';
   return `
-    <div class="project-wiki-topic-picker ${state.projectWikiTopicPickerOpen ? 'open' : ''}" data-project-wiki-topic-picker>
+    <span class="project-wiki-topic-picker project-config-asset-action-wrap ${state.projectWikiTopicPickerOpen ? 'open' : ''}" data-project-wiki-topic-picker>
       <button
-        class="project-wiki-topic-control"
+        class="project-config-asset-action"
         type="button"
         data-project-wiki-topic-toggle
         aria-haspopup="listbox"
         aria-expanded="${state.projectWikiTopicPickerOpen ? 'true' : 'false'}"
         aria-controls="projectWikiTopicOptions"
-        aria-label="${escapeAttribute(selectionLabel)}"
+        aria-label="添加知识"
       >
-        <span class="project-wiki-topic-selection" aria-live="polite">
-          ${selectedTopics.length
-    ? selectedTopics.map((topicName) => {
-      const topic = projectWikiTopicOptions.find((option) => option.name === topicName);
-      return `<span class="project-wiki-topic-chip"><i data-lucide="${topic?.type === 'yuque' ? 'book-open-text' : 'database'}"></i>${escapeHtml(topicName)}</span>`;
-    }).join('')
-    : '<span class="project-wiki-topic-placeholder">选择语雀空间或 LLM Wiki</span>'}
-        </span>
-        <i class="project-wiki-topic-chevron" data-lucide="chevron-down"></i>
+        <i data-lucide="plus"></i><span>添加知识</span>
       </button>
       ${state.projectWikiTopicPickerOpen ? `
-        <section class="project-wiki-topic-options" id="projectWikiTopicOptions" role="listbox" aria-label="可关联的云端知识" aria-multiselectable="true">
+        <section class="project-wiki-topic-options" id="projectWikiTopicOptions" role="listbox" aria-label="可关联的云端资产" aria-multiselectable="true">
           ${projectWikiTopicOptions.map((topic) => {
     const isSelected = selectedTopicNames.has(topic.name);
-    const icon = topic.type === 'yuque' ? 'book-open-text' : 'database';
     return `
               <button
                 class="project-wiki-topic-option ${isSelected ? 'selected' : ''}"
@@ -8360,7 +8556,6 @@ function renderProjectWikiTopicPicker() {
                 aria-selected="${isSelected ? 'true' : 'false'}"
                 data-project-wiki-topic-option="${escapeAttribute(topic.name)}"
               >
-                <span class="project-wiki-topic-icon ${escapeAttribute(topic.type)}"><i data-lucide="${icon}"></i></span>
                 <span class="project-wiki-topic-copy">
                   <strong>${escapeHtml(topic.name)}</strong>
                   <small><em>${escapeHtml(topic.source)}</em>${escapeHtml(topic.description)}</small>
@@ -8369,10 +8564,10 @@ function renderProjectWikiTopicPicker() {
               </button>
             `;
   }).join('')}
-          <footer>${selectedTopics.length ? `已选择 ${selectedTopics.length} 项知识来源` : '支持同时选择多个知识来源'}</footer>
+          <footer>${selectedTopics.length ? `已选择 ${selectedTopics.length} 项云端资产` : '支持同时选择多个云端资产'}</footer>
         </section>
       ` : ''}
-    </div>
+    </span>
   `;
 }
 
@@ -8484,6 +8679,19 @@ function removeProjectFolder(name) {
   refreshProjectFolderPicker();
 }
 
+function removeProjectConfigAsset(kind, assetId) {
+  if (kind === 'wiki-topic') {
+    state.projectCreationWikiTopics = (state.projectCreationWikiTopics || []).filter((topicName) => topicName !== assetId);
+  } else if (kind === 'session') {
+    state.projectCreationSessionAssets = (state.projectCreationSessionAssets || []).filter((session) => session.id !== assetId);
+  } else if (kind === 'folder') {
+    state.projectCreationFolders = (state.projectCreationFolders || []).filter((folder) => folder.name !== assetId);
+  } else {
+    return;
+  }
+  refreshProjectKnowledgeModule();
+}
+
 function renderProjectMemberPicker() {
   const selectedMembers = state.projectCreationMembers || [];
   const selectedNames = new Set(selectedMembers.map((member) => member.name));
@@ -8564,6 +8772,7 @@ function renderProjectMemberPicker() {
 function renderProjectMemberSource(type, title, description, members, options = null) {
   const pickerOpen = Array.isArray(options);
   const pickerLabel = type === 'agent' ? '专家智能体' : '项目成员';
+  const queryValue = pickerOpen ? state.projectMemberQuery : '';
   return `
     <section class="project-member-source ${type}">
       <header>
@@ -8574,8 +8783,7 @@ function renderProjectMemberSource(type, title, description, members, options = 
         </div>
       </header>
       <div class="project-member-source-control ${pickerOpen ? 'open' : ''}">
-        <div class="project-member-source-selection">
-          ${members.length ? members.map((member) => `
+        ${members.map((member) => `
           <span class="project-member-selected ${member.isAgent ? 'agent' : 'human'}">
             <em>${escapeHtml(member.name.slice(0, 1))}</em>
             <strong>${escapeHtml(member.name)}</strong>
@@ -8585,29 +8793,24 @@ function renderProjectMemberSource(type, title, description, members, options = 
               </button>
             `}
           </span>
-          `).join('') : `<span class="project-member-source-placeholder">选择${pickerLabel}</span>`}
-        </div>
-        <button type="button" data-project-member-add="${type}" aria-expanded="${pickerOpen ? 'true' : 'false'}">
-          <span>${members.length ? '继续添加' : `选择${pickerLabel}`}</span>
-          <i data-lucide="chevron-down"></i>
-        </button>
+        `).join('')}
+        <label class="project-member-source-query">
+          <i data-lucide="search"></i>
+          <input
+            type="search"
+            data-project-member-search="${type}"
+            value="${escapeAttribute(queryValue)}"
+            autocomplete="off"
+            aria-label="搜索${pickerLabel}"
+            aria-expanded="${pickerOpen ? 'true' : 'false'}"
+            aria-controls="projectMemberOptions"
+            placeholder="搜索并添加"
+          />
+        </label>
+        <i class="project-member-source-chevron" data-lucide="chevron-down"></i>
       </div>
       ${pickerOpen ? `
         <section class="project-member-inline-picker" id="projectMemberOptions" role="listbox" aria-label="可添加的${pickerLabel}">
-          <label class="project-member-option-search">
-            <i data-lucide="search"></i>
-            <input
-              id="projectMemberSearch"
-              type="search"
-              data-project-member-search
-              value="${escapeAttribute(state.projectMemberQuery)}"
-              autocomplete="off"
-              aria-label="搜索${pickerLabel}"
-              aria-expanded="true"
-              aria-controls="projectMemberOptions"
-              placeholder="搜索${type === 'agent' ? 'Snack 智能体员工' : '项目成员'}"
-            />
-          </label>
           <div class="project-member-option-list">
             ${options.length ? options.map(renderProjectMemberOption).join('') : `
               <p class="project-member-empty">没有找到可添加的${pickerLabel}</p>
@@ -8678,7 +8881,9 @@ function refreshProjectMemberPicker(options = {}) {
 
 function syncProjectMemberSearchFocus() {
   window.setTimeout(() => {
-    const input = document.querySelector('[data-project-member-search]');
+    const activeType = state.projectMemberPickerType === 'agent' ? 'agent' : 'human';
+    const input = document.querySelector(`[data-project-member-search="${activeType}"]`)
+      || document.querySelector('[data-project-member-search]');
     if (!(input instanceof HTMLInputElement)) return;
     input.focus();
     input.setSelectionRange(input.value.length, input.value.length);
@@ -8731,6 +8936,7 @@ function createNewProject(form) {
   const title = String(formData.get('project-name') || '').trim();
   const objective = String(formData.get('project-objective') || '').trim();
   const wikiTopics = [...(state.projectCreationWikiTopics || [])];
+  const sessionAssets = (state.projectCreationSessionAssets || []).map((session) => ({ ...session }));
   const sourceFolders = (state.projectCreationFolders || []).map((folder) => ({ ...folder }));
   const invitedMembers = [...state.projectCreationMembers];
   const invitedPeople = invitedMembers.filter((member) => !member.isAgent);
@@ -8778,6 +8984,7 @@ function createNewProject(form) {
       ]),
     ];
     editingProject.wikiTopics = wikiTopics;
+    editingProject.sessionAssets = sessionAssets;
     editingProject.sourceFolders = sourceFolders;
     editingProject.monitoringType = monitoringType;
     editingProject.monitoringRules = monitoringRules;
@@ -8788,8 +8995,10 @@ function createNewProject(form) {
     state.projectEditingId = null;
     state.projectCreationMembers = [];
     state.projectCreationWikiTopics = [];
+    state.projectCreationSessionAssets = [];
     state.projectWikiTopicPickerOpen = false;
     state.projectKnowledgeEditorOpen = false;
+    state.projectLocalWorkspacePromptOpen = false;
     state.projectCreationFolders = [];
     state.projectMemberQuery = '';
     state.projectMemberPickerOpen = false;
@@ -8806,6 +9015,7 @@ function createNewProject(form) {
   project.summary = objective ? truncateProjectSummary(objective) : '等待补充项目目标';
   project.objective = objective || '待补充项目目标';
   project.wikiTopics = wikiTopics;
+  project.sessionAssets = sessionAssets;
   project.sourceFolders = sourceFolders;
   project.members = [currentUserName, ...invitedPeople.map((member) => member.name)];
   project.agents = ['Snack', ...invitedAgents.map((member) => member.name)];
@@ -8825,8 +9035,10 @@ function createNewProject(form) {
   state.projectEditingId = null;
   state.projectCreationMembers = [];
   state.projectCreationWikiTopics = [];
+  state.projectCreationSessionAssets = [];
   state.projectWikiTopicPickerOpen = false;
   state.projectKnowledgeEditorOpen = false;
+  state.projectLocalWorkspacePromptOpen = false;
   state.projectCreationFolders = [];
   state.view = 'projectBoard';
   state.taskTab = 'projects';
@@ -10746,8 +10958,13 @@ function handleBodyClick(event) {
   if (shouldCloseProjectAssetMore) state.projectAssetMoreOpen = null;
   const sessionImportTarget = event.target.closest('[data-project-session-import-open], [data-project-session-import-close], [data-project-session-import-backdrop], [data-project-session-import-option], [data-project-session-import-search]');
   const projectPickerTarget = event.target.closest('[data-project-picker]');
-  const target = sessionImportTarget || projectPickerTarget || event.target.closest('[data-view], [data-create-project], [data-project-config], [data-project-detail-sidebar], [data-project-detail-tab], [data-project-modal-close], [data-project-modal-backdrop], [data-project-group-chat-open], [data-project-group-chat-close], [data-project-group-chat-backdrop], [data-project-group-chat-filter], [data-project-group-chat-option], [data-project-group-chat-complete], [data-project-group-enter], [data-project-group-action], [data-project-group-page], [data-project-group-modal-close], [data-project-group-modal-backdrop], [data-project-group-modal-action], [data-project-collaborator-manager], [data-project-collaborator-add], [data-project-collaborator-option], [data-create-issue], [data-issue-create-select-toggle], [data-issue-create-select-option], [data-issue-modal-close], [data-issue-modal-backdrop], [data-local-knowledge-backdrop], [data-close-local-knowledge], [data-open-local-knowledge], [data-open-local-folder], [data-submit-local-knowledge], [data-project-asset-more], [data-project-asset-action], [data-project-asset-bulk-action], [data-project-asset-share-close], [data-project-asset-share-save], [data-project-knowledge-picker-toggle], [data-project-knowledge-topic], [data-project-wiki-topic-create], [data-project-folder-remove], [data-project-wiki-topic-toggle], [data-project-wiki-topic-option], [data-project-knowledge-add], [data-project-members-add], [data-project-member-picker], [data-project-member-add], [data-project-member-search], [data-project-member-option], [data-project-member-remove], [data-snack-desktop-download], [data-monitoring-rule-recognize], [data-monitoring-rule-edit], [data-monitoring-rule-remove], [data-project-intake-submit], [data-meeting-intake-submit], [data-mock-action], [data-confirmation-action], [data-confirmation-cancel], [data-model-menu], [data-model-select], [data-project-context], [data-project-context-empty], [data-project-picker-search], [data-agent-status-toggle], [data-task-tab], [data-task-filter], [data-project-board-tab], [data-issue-tab], [data-close-issue-tab], [data-todo-inbox-issue], [data-issue-id], [data-log-doc], [data-close-log-doc], [data-project-open], [data-project-toggle], [data-project-sessions], [data-project-session], [data-project-menu], [data-project-action], [data-project-create-menu], [data-project-create-action], [data-loose-session], [data-board-sidebar], [data-member-sidebar], [data-member-tab], [data-member-manager-toggle], [data-member-manager-add], [data-member-manager-remove], [data-agent-tab], [data-agent-chat], [data-agent-menu], [data-agent-select], [data-resource-tab], [data-toast]');
+  const target = sessionImportTarget || projectPickerTarget || event.target.closest('[data-view], [data-create-project], [data-project-config], [data-project-detail-sidebar], [data-project-detail-tab], [data-project-modal-close], [data-project-modal-backdrop], [data-project-group-chat-open], [data-project-group-chat-close], [data-project-group-chat-backdrop], [data-project-group-chat-filter], [data-project-group-chat-option], [data-project-group-chat-complete], [data-project-group-enter], [data-project-group-action], [data-project-group-page], [data-project-group-members-close], [data-project-group-members-backdrop], [data-project-group-members-add], [data-project-group-members-remove], [data-project-group-modal-close], [data-project-group-modal-backdrop], [data-project-group-modal-action], [data-project-collaborator-manager], [data-project-collaborator-add], [data-project-collaborator-option], [data-project-collaborator-permission], [data-project-collaborator-permission-value], [data-create-issue], [data-issue-create-select-toggle], [data-issue-create-select-option], [data-issue-modal-close], [data-issue-modal-backdrop], [data-local-knowledge-backdrop], [data-close-local-knowledge], [data-open-local-knowledge], [data-open-local-folder], [data-submit-local-knowledge], [data-project-asset-more], [data-project-asset-action], [data-project-asset-bulk-action], [data-project-asset-share-close], [data-project-asset-share-save], [data-project-knowledge-picker-toggle], [data-project-knowledge-topic], [data-project-wiki-topic-create], [data-project-folder-remove], [data-project-config-asset-remove], [data-project-wiki-topic-toggle], [data-project-wiki-topic-option], [data-project-knowledge-add], [data-project-local-workspace-toggle], [data-project-local-workspace-select], [data-project-members-add], [data-project-member-picker], [data-project-member-add], [data-project-member-search], [data-project-member-option], [data-project-member-remove], [data-snack-desktop-download], [data-monitoring-rule-recognize], [data-monitoring-rule-edit], [data-monitoring-rule-remove], [data-project-intake-submit], [data-meeting-intake-submit], [data-mock-action], [data-confirmation-action], [data-confirmation-cancel], [data-model-menu], [data-model-select], [data-project-context], [data-project-context-empty], [data-project-picker-search], [data-agent-status-toggle], [data-task-tab], [data-task-filter], [data-project-board-tab], [data-issue-tab], [data-close-issue-tab], [data-todo-inbox-issue], [data-issue-id], [data-log-doc], [data-close-log-doc], [data-project-open], [data-project-toggle], [data-project-sessions], [data-project-session], [data-project-menu], [data-project-action], [data-project-create-menu], [data-project-create-action], [data-loose-session], [data-board-sidebar], [data-member-sidebar], [data-member-tab], [data-member-manager-toggle], [data-member-manager-add], [data-member-manager-remove], [data-agent-tab], [data-agent-chat], [data-agent-menu], [data-agent-select], [data-resource-tab], [data-toast]');
   if (!target) {
+    if (state.projectCollaboratorPermissionMember) {
+      state.projectCollaboratorPermissionMember = null;
+      if (!refreshProjectCollaboratorsPage()) render();
+      return;
+    }
     if (shouldCloseProjectKnowledgeAttachPicker || shouldCloseProjectAssetShare || shouldCloseProjectAssetMore || state.openProjectMenuId || state.openProjectCreateMenuId || state.modelPickerOpen || state.projectPickerOpen) {
       state.openProjectMenuId = null;
       state.openProjectCreateMenuId = null;
@@ -10783,6 +11000,17 @@ function handleBodyClick(event) {
     state.modelPickerOpen = false;
     state.projectPickerOpen = false;
   }
+  const clickedProjectPermissionControl = target.dataset.projectCollaboratorPermission !== undefined
+    || target.dataset.projectCollaboratorPermissionValue !== undefined;
+  if (state.projectCollaboratorPermissionMember && !clickedProjectPermissionControl) {
+    state.projectCollaboratorPermissionMember = null;
+    document.querySelector('.project-collaborator-permission-menu')?.remove();
+    const permissionWrap = document.querySelector('.project-collaborator-permission.open');
+    if (permissionWrap instanceof HTMLElement) {
+      permissionWrap.classList.remove('open');
+      permissionWrap.querySelector('[aria-expanded="true"]')?.setAttribute('aria-expanded', 'false');
+    }
+  }
   if (target.dataset.projectModalClose !== undefined) return closeProjectCreationModal();
   if (target.dataset.projectModalBackdrop !== undefined) {
     if (event.target === target) closeProjectCreationModal();
@@ -10801,6 +11029,13 @@ function handleBodyClick(event) {
     return;
   }
   if (target.dataset.projectGroupModalAction) return handleProjectGroupModalAction(target.dataset.projectGroupModalAction);
+  if (target.dataset.projectGroupMembersClose !== undefined) return closeProjectGroupMembersModal();
+  if (target.dataset.projectGroupMembersBackdrop !== undefined) {
+    if (event.target === target) closeProjectGroupMembersModal();
+    return;
+  }
+  if (target.dataset.projectGroupMembersAdd !== undefined) return addProjectGroupMemberFromManager();
+  if (target.dataset.projectGroupMembersRemove) return removeProjectGroupMember(target.dataset.projectGroupMembersRemove);
   if (target.dataset.localKnowledgeBackdrop !== undefined) {
     if (event.target === target) closeLocalKnowledgeModal();
     return;
@@ -10842,6 +11077,13 @@ function handleBodyClick(event) {
   if (target.dataset.projectCollaboratorManager) return toggleProjectCollaboratorManager(target.dataset.projectCollaboratorManager);
   if (target.dataset.projectCollaboratorAdd) return toggleProjectCollaboratorPicker(target.dataset.projectCollaboratorAdd);
   if (target.dataset.projectCollaboratorOption) return addProjectCollaborator(target.dataset.projectCollaboratorOption);
+  if (target.dataset.projectCollaboratorPermissionValue) {
+    return setProjectCollaboratorPermission(
+      target.dataset.projectCollaboratorPermissionMember,
+      target.dataset.projectCollaboratorPermissionValue,
+    );
+  }
+  if (target.dataset.projectCollaboratorPermission) return toggleProjectCollaboratorPermission(target.dataset.projectCollaboratorPermission);
   if (target.dataset.projectDetailSidebar) return setProjectDetailSidebar(target.dataset.projectDetailSidebar);
   if (target.dataset.projectDetailTab) {
     state.projectDetailTab = target.dataset.projectDetailTab === 'knowledge' ? 'knowledge' : 'collaborators';
@@ -10854,15 +11096,21 @@ function handleBodyClick(event) {
   if (target.dataset.projectWikiTopicCreate !== undefined) return simulateWikiTopicCreationLink();
   if (target.dataset.projectConfig) return openProjectCreationModal(target.dataset.projectConfig);
   if (target.dataset.projectFolderRemove) return removeProjectFolder(target.dataset.projectFolderRemove);
+  if (target.dataset.projectConfigAssetRemove) return removeProjectConfigAsset(target.dataset.projectConfigAssetRemove, target.dataset.projectConfigAssetId);
   if (target.dataset.projectWikiTopicToggle !== undefined) return toggleProjectWikiTopicPicker();
   if (target.dataset.projectWikiTopicOption) return toggleProjectWikiTopic(target.dataset.projectWikiTopicOption);
   if (target.dataset.projectKnowledgeAdd !== undefined) return toggleProjectKnowledgeEditor();
+  if (target.dataset.projectLocalWorkspaceToggle !== undefined) return toggleProjectLocalWorkspacePrompt();
+  if (target.dataset.projectLocalWorkspaceSelect !== undefined) return showToast('已打开本地工作区选择器');
   if (target.dataset.projectMembersAdd !== undefined) return toggleProjectMembersEditor();
   if (target.dataset.projectMemberAdd) return toggleProjectMemberPicker(target.dataset.projectMemberAdd);
   if (target.dataset.projectMemberOption) return selectProjectMember(target.dataset.projectMemberOption);
   if (target.dataset.projectMemberRemove) return removeProjectMember(target.dataset.projectMemberRemove);
   if (target.dataset.projectMemberSearch !== undefined || target.dataset.projectMemberPicker !== undefined) {
-    if (!state.projectMemberPickerOpen) openProjectMemberPicker();
+    const requestedType = target.dataset.projectMemberSearch;
+    if (!state.projectMemberPickerOpen || (requestedType && state.projectMemberPickerType !== requestedType)) {
+      openProjectMemberPicker(requestedType || state.projectMemberPickerType);
+    }
     return;
   }
   if (target.dataset.snackDesktopDownload !== undefined) return showToast('请前往 Snack 官网下载桌面端');
@@ -11054,6 +11302,8 @@ document.body.addEventListener('input', (event) => {
     return;
   }
   if (event.target instanceof HTMLInputElement && event.target.dataset.projectMemberSearch !== undefined) {
+    const requestedType = event.target.dataset.projectMemberSearch;
+    if (requestedType) state.projectMemberPickerType = requestedType === 'agent' ? 'agent' : 'human';
     state.projectMemberQuery = event.target.value;
     state.projectMemberPickerOpen = true;
     refreshProjectMemberPicker({ focusSearch: true });
@@ -11101,7 +11351,7 @@ document.body.addEventListener('change', (event) => {
     const assetIds = [
       ...(project.wikiTopics || []).map((topicName) => getProjectWikiTopicAssetId(topicName)),
       ...(project.sessionAssets || []).map((session) => session.id),
-      ...(project.sourceFolders || []).filter((folder) => folder.kind === 'local-files').map((folder) => folder.id),
+      ...ensureProjectSourceAssets(project).map((folder) => folder.id),
     ];
     setProjectAssetSelection(projectId, target.checked ? assetIds : []);
     render();
@@ -11182,7 +11432,10 @@ document.body.addEventListener('change', (event) => {
 });
 document.body.addEventListener('focusin', (event) => {
   if (!(event.target instanceof HTMLInputElement) || event.target.dataset.projectMemberSearch === undefined) return;
-  if (!state.projectMemberPickerOpen) openProjectMemberPicker();
+  const requestedType = event.target.dataset.projectMemberSearch;
+  if (!state.projectMemberPickerOpen || (requestedType && state.projectMemberPickerType !== requestedType)) {
+    openProjectMemberPicker(requestedType || state.projectMemberPickerType);
+  }
 });
 document.body.addEventListener('focusout', (event) => {
   if (event.target instanceof HTMLInputElement && event.target.dataset.projectTitleInput) {
@@ -11190,6 +11443,17 @@ document.body.addEventListener('focusout', (event) => {
   }
 });
 document.body.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && state.projectGroupMembersModal) {
+    event.preventDefault();
+    closeProjectGroupMembersModal();
+    return;
+  }
+  if (event.key === 'Escape' && state.projectCollaboratorPermissionMember) {
+    event.preventDefault();
+    state.projectCollaboratorPermissionMember = null;
+    if (!refreshProjectCollaboratorsPage()) render();
+    return;
+  }
   if (event.key === 'Escape' && state.sidebarSearchOpen) {
     event.preventDefault();
     setSidebarSearchOpen(false);
