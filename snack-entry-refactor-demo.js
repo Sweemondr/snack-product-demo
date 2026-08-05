@@ -135,6 +135,8 @@ const state = {
   projectCreationFolders: [],
   projectCreationWikiTopics: [],
   projectCreationSessionAssets: [],
+  projectCreationSource: null,
+  projectCreationRecordingId: null,
   projectWikiTopicPickerOpen: false,
   projectKnowledgeEditorOpen: false,
   projectLocalWorkspacePromptOpen: false,
@@ -186,6 +188,7 @@ const state = {
   snackRecordNativeMaximized: false,
   snackRecordActive: false,
   snackRecordSeconds: 0,
+  snackRecordStartedAt: null,
   snackRecordQuery: '',
   snackRecordSelection: [],
   snackRecordDeleteIds: [],
@@ -213,6 +216,7 @@ const state = {
 };
 
 const currentUserName = '田晓柔';
+const meetingAssistantAgentName = '会议助手智能体';
 const projectGroupPageSize = 4;
 
 function isSnackDesktopRuntime() {
@@ -322,6 +326,11 @@ const agents = [
     name: 'Snack',
     desc: '通用项目 Agent，负责理解上下文、生成任务、推进节点和回答项目进展。',
     last: '项目内默认可问',
+  },
+  {
+    name: '会议助手',
+    desc: '读取会议转写，生成结构化纪要，并在人工选择后把行动项回写为项目任务。',
+    last: '适合会议纪要与待办跟进',
   },
   {
     name: '投放监控 Agent',
@@ -821,6 +830,7 @@ const snackRecordings = [
     fileName: '产品周会 · 智能协作.wav',
     transcriptFileName: '产品周会 · 智能协作.txt',
     createdLabel: '今天 16:02',
+    startedAt: '2026-08-05T16:00:00+08:00',
     durationSeconds: 1938,
     fileSize: '48.2 MB',
     state: 'completed',
@@ -3281,7 +3291,6 @@ function getMeetingStatus(meeting) {
 
 function renderProjectSchedulePage(project) {
   if (!project) return '';
-  if (!isMeetingSetupCompleted(project.id)) return renderMeetingSetupConversation(project);
   const weekDates = getDisplayedWeekDates();
   const visibleMeetings = getProjectMeetings(project.id)
     .filter((meeting) => weekDates.includes(meeting.date));
@@ -3783,19 +3792,16 @@ function renderMeetingDemoControls() {
   }
   const mainMeeting = getMeetingById('product-weekly-20260731');
   const status = getMeetingStatus(mainMeeting);
-  const setupPending = state.view === 'projectSchedule' && !isMeetingSetupCompleted(state.activeProject);
   meetingDemoControls.innerHTML = `
     <div class="demo-control-copy">
       <span>会议 Demo</span>
-      <strong>${setupPending ? '首次配置' : status.label}</strong>
+      <strong>${status.label}</strong>
     </div>
     <div class="demo-device-switch" role="group" aria-label="切换演示设备">
       <button class="${state.demoDevice === 'desktop' ? 'active' : ''}" type="button" data-demo-device="desktop"><i data-lucide="monitor"></i>桌面</button>
       <button class="${state.demoDevice === 'mobile' ? 'active' : ''}" type="button" data-demo-device="mobile"><i data-lucide="smartphone"></i>移动</button>
     </div>
-    ${setupPending
-      ? '<button class="demo-advance-button" type="button" data-meeting-setup-action="skip"><i data-lucide="calendar-days"></i>跳过配置</button>'
-      : '<button class="demo-advance-button" type="button" data-meeting-action="advance"><i data-lucide="skip-forward"></i>推进演示</button>'}
+    <button class="demo-advance-button" type="button" data-meeting-action="advance"><i data-lucide="skip-forward"></i>推进演示</button>
     <button class="demo-reset-button" type="button" data-meeting-action="reset" aria-label="重置会议演示"><i data-lucide="rotate-ccw"></i></button>
   `;
 }
@@ -4991,15 +4997,46 @@ function renderIssueDetail(issue, options = {}) {
             <p>${issue.desc}</p>
           </div>
           <div class="issue-detail-actions" aria-label="任务操作">
+            ${issue.automationKind === 'meeting-briefing' ? `<button class="secondary-button" data-briefing-simulate-trigger="${escapeAttribute(issue.code)}"><i data-lucide="${issue.triggerCount ? 'message-square-text' : 'fast-forward'}"></i>${issue.triggerCount ? '查看会前简报' : `模拟到 ${escapeHtml(issue.schedule?.briefingTime || '15:00')}`}</button>` : ''}
             <button class="secondary-button" data-toast="已归档该任务"><i data-lucide="archive"></i>归档任务</button>
             <button class="primary-button" title="当任务有新进展或动态时，会提醒你" data-tooltip="当任务有新进展或动态时，会提醒你" data-toast="已订阅该任务进展"><i data-lucide="bell-plus"></i>订阅任务进展</button>
           </div>
         </header>
+        ${renderMeetingBriefingSimulation(issue)}
         ${renderIssueTimeline(issue, options)}
       </main>
       ${renderIssueSidePanel(issue, project)}
     </section>
     ${state.logDocIssue === issue.code ? renderLogDocModal(issue, project) : ''}
+  `;
+}
+
+function renderMeetingBriefingSimulation(issue) {
+  if (issue?.automationKind !== 'meeting-briefing') return '';
+  const triggered = Number(issue.triggerCount || 0) > 0;
+  const schedule = issue.schedule || {};
+  const briefingTime = schedule.briefingTime || getMeetingBriefingTime(schedule.meetingTime, schedule.reminderMinutes || 60);
+  return `
+    <section class="meeting-briefing-simulation ${triggered ? 'completed' : ''}" aria-label="周期会议模拟流转">
+      <header>
+        <span><i data-lucide="calendar-sync"></i></span>
+        <div><small>周期会议任务</small><strong>${escapeHtml(schedule.cadenceLabel || schedule.label || '周期会议')}</strong></div>
+        <em>${triggered ? '简报已发送' : '等待触发'}</em>
+      </header>
+      <div class="meeting-briefing-flow">
+        <span class="done"><i data-lucide="check"></i><small>任务创建</small><strong>配置已完成</strong></span>
+        <i data-lucide="arrow-right"></i>
+        <span class="${triggered ? 'done' : 'target'}"><i data-lucide="${triggered ? 'check' : 'clock-3'}"></i><small>模拟指定时间</small><strong>${escapeHtml(schedule.nextDate || '2026-08-07')} ${escapeHtml(briefingTime)}</strong></span>
+        <i data-lucide="arrow-right"></i>
+        <span class="${triggered ? 'done' : ''}"><i data-lucide="${triggered ? 'check' : 'bot'}"></i><small>${escapeHtml(meetingAssistantAgentName)}</small><strong>发送会前简报</strong></span>
+      </div>
+      <footer>
+        <span><i data-lucide="info"></i>${triggered ? '会前简报已经发送到项目会话。' : `点击后将 Demo 时间推进到会前 ${schedule.reminderMinutes || 60} 分钟。`}</span>
+        <button class="${triggered ? 'secondary-button' : 'primary-button'}" type="button" data-briefing-simulate-trigger="${escapeAttribute(issue.code)}">
+          <i data-lucide="${triggered ? 'message-square-text' : 'fast-forward'}"></i>${triggered ? '查看会前简报' : `模拟到 ${escapeHtml(briefingTime)}`}
+        </button>
+      </footer>
+    </section>
   `;
 }
 
@@ -5394,6 +5431,10 @@ function renderConfirmationCard(issue, options = {}) {
 
 function renderMessageAction(action) {
   const projectId = state.activeProject;
+  if (action.type === 'meetingAssistantResult') {
+    const session = getMeetingAssistantSession(action.sessionId, projectId);
+    return session ? renderMeetingAssistantResult(session, projectId) : '';
+  }
   if (action.type === 'meetingIntakeGuide') {
     return renderMeetingIntakeGuideCard();
   }
@@ -5403,6 +5444,9 @@ function renderMessageAction(action) {
   if (action.type === 'meetingBrief') {
     const meeting = getMeetingById(action.meetingId);
     return meeting?.brief ? renderMeetingBriefMessageCard(meeting) : '';
+  }
+  if (action.type === 'projectBriefing') {
+    return renderProjectBriefingMessageCard(action);
   }
   if (action.type === 'meetingTranscript') {
     return renderMeetingTranscriptAttachment(action);
@@ -5464,6 +5508,34 @@ function renderMeetingBriefMessageCard(meeting) {
         ${meeting.brief.businessFocus.map((item) => `<span><i data-lucide="circle-dot"></i>${escapeHtml(item)}</span>`).join('')}
       </div>
       <footer><button type="button" data-project-session="${meeting.projectId}:meeting-schedule">查看项目日程<i data-lucide="arrow-up-right"></i></button></footer>
+    </section>
+  `;
+}
+
+function renderProjectBriefingMessageCard(briefing) {
+  const focusItems = briefing.focusItems || [];
+  const metrics = briefing.metrics || [];
+  return `
+    <section class="message-meeting-brief message-project-briefing" aria-label="${escapeAttribute(briefing.meetingTitle || briefing.projectTitle)}会前简报">
+      <header>
+        <span><i data-lucide="sparkles"></i></span>
+        <div><small>${meetingAssistantAgentName} · ${escapeHtml(briefing.simulatedAt || '模拟触发')}</small><strong>${escapeHtml(briefing.meetingTitle || briefing.projectTitle)}会前简报</strong></div>
+        <em>${escapeHtml(briefing.cadenceLabel)}</em>
+      </header>
+      <div class="message-meeting-brief-grid">
+        <section><span>重点进展</span><strong>${focusItems.length}</strong><small>项待对齐</small></section>
+        <section><span>核心指标</span><strong>${metrics.length}</strong><small>项需关注</small></section>
+        <section><span>发送时机</span><strong>${briefing.reminderMinutes}</strong><small>分钟前</small></section>
+      </div>
+      <div class="message-project-briefing-objective">
+        <span>本次目标</span>
+        <p>${escapeHtml(briefing.objective)}</p>
+      </div>
+      <div class="message-meeting-brief-list">
+        ${focusItems.map((item) => `<span><i data-lucide="circle-dot"></i>${escapeHtml(item)}</span>`).join('')}
+        ${metrics.map((item) => `<span><i data-lucide="gauge"></i>${escapeHtml(item)}</span>`).join('')}
+      </div>
+      <footer><button type="button" data-issue-id="${escapeAttribute(briefing.issueCode)}">查看简报任务<i data-lucide="arrow-up-right"></i></button></footer>
     </section>
   `;
 }
@@ -5538,6 +5610,7 @@ function renderMeetingSummaryCard() {
 function renderChatView() {
   const project = getComposerProject();
   const agentProject = project || getVisibleProjectFolders()[0] || projectFolders[0];
+  const isMeetingAssistant = state.selectedAgent === '会议助手' && Boolean(project);
   return `
     <section class="new-chat-page">
       <div class="new-chat-inner">
@@ -5546,10 +5619,30 @@ function renderChatView() {
           ${state.agentMenuOpen ? renderProjectAgentMenu(agentProject) : ''}
         </div>
         <div class="new-chat-workspace">
-          ${renderComposer({ project, variant: 'ask', placeholder: '描述项目目标或要跟进的事情...' })}
-          ${renderSnackMeetingEntryCard()}
+          ${renderComposer({
+            project,
+            variant: 'ask',
+            mode: isMeetingAssistant ? 'meeting-assistant' : '',
+            placeholder: isMeetingAssistant
+              ? '粘贴会议转写，并告诉会议助手要生成纪要和识别待办…'
+              : '描述项目目标或要跟进的事情...',
+          })}
+          ${isMeetingAssistant ? renderMeetingAssistantExample() : renderSnackMeetingEntryCard()}
         </div>
       </div>
+    </section>
+  `;
+}
+
+function renderMeetingAssistantExample() {
+  return `
+    <section class="meeting-assistant-example">
+      <span><i data-lucide="notebook-pen"></i></span>
+      <div>
+        <strong>从会议转写开始</strong>
+        <small>会议助手会同时生成纪要和待办候选；只有你选中的待办才会进入项目任务看板。</small>
+      </div>
+      <button type="button" data-meeting-assistant-example>使用示例转写</button>
     </section>
   `;
 }
@@ -5569,12 +5662,13 @@ function renderSnackMeetingEntryCard() {
 }
 
 function renderProjectAgentMenu(project) {
-  const agentNames = project?.agents?.length ? project.agents : agents.map((agent) => agent.name);
+  const projectAgentNames = project?.agents?.length ? project.agents : agents.map((agent) => agent.name);
+  const agentNames = [...new Set(['Snack', '会议助手', ...projectAgentNames])];
   return `
     <div class="agent-picker-menu">
       ${agentNames.map((agentName) => `
         <button class="${agentName === state.selectedAgent ? 'active' : ''}" data-agent-select="${agentName}">
-          <i data-lucide="${agentName === state.selectedAgent ? 'check' : 'bot'}"></i>
+          <i data-lucide="${agentName === state.selectedAgent ? 'check' : agentName === '会议助手' ? 'notebook-pen' : 'bot'}"></i>
           <span>${agentName}</span>
         </button>
       `).join('')}
@@ -5586,12 +5680,15 @@ function renderComposer(options = {}) {
   if (options.variant === 'ask') {
     const projectId = options.project ? options.project.id : '';
     const isProjectIntake = options.mode === 'project-intake' && projectId;
+    const isMeetingAssistant = options.mode === 'meeting-assistant' && projectId;
     const submitAttrs = isProjectIntake
       ? `data-project-intake-submit="${projectId}"`
-      : 'data-toast="已进入项目聊天草稿"';
+      : isMeetingAssistant
+        ? `data-meeting-assistant-submit="${projectId}"`
+        : 'data-toast="已进入项目聊天草稿"';
     return `
       <div class="composer ask-composer">
-        <textarea name="new-chat-message" ${isProjectIntake ? `data-ask-input="${projectId}"` : ''} placeholder="${options.placeholder || '随心输入'}"></textarea>
+        <textarea name="new-chat-message" ${isProjectIntake ? `data-ask-input="${projectId}"` : ''}${isMeetingAssistant ? ` data-meeting-assistant-input="${projectId}"` : ''} placeholder="${options.placeholder || '随心输入'}"></textarea>
         <div class="button-row">
           <div class="chip-row">
             <button class="icon-button composer-tool-button" aria-label="上传附件"><i data-lucide="paperclip"></i></button>
@@ -5624,6 +5721,89 @@ function renderComposer(options = {}) {
       </div>
     </div>
   `;
+}
+
+function renderMeetingAssistantResult(session, projectId) {
+  const selectedIds = session.selectedTaskIds || [];
+  const candidates = session.taskCandidates || [];
+  const pending = candidates.filter((candidate) => candidate.status === 'pending');
+  const created = candidates.filter((candidate) => candidate.status === 'created');
+  const ignored = candidates.filter((candidate) => candidate.status === 'ignored');
+  const selectedPendingCount = pending.filter((candidate) => selectedIds.includes(candidate.id)).length;
+  const allPendingSelected = pending.length > 0 && pending.every((candidate) => selectedIds.includes(candidate.id));
+  return `
+    <section class="meeting-summary-card meeting-assistant-result" aria-label="会议助手识别的待办">
+      <header>
+        <div><small>会议助手 · ${pending.length ? '待你确认' : '已完成确认'}</small><h3>识别到的待办</h3></div>
+        <span class="meeting-summary-privacy"><i data-lucide="folder-lock"></i>仅当前项目可见</span>
+      </header>
+      <section class="meeting-summary-actions meeting-assistant-tasks">
+        <header>
+          <span><i data-lucide="list-checks"></i>选择要继续跟进的事项</span>
+          <em>${created.length ? `${created.length} 已创建${pending.length ? ` · ${pending.length} 待选择` : ''}` : `${pending.length} 待选择`}</em>
+        </header>
+        <p class="meeting-assistant-task-help">可单选或多选。未选择的待办不会创建任务，也不会进入项目看板。</p>
+        ${candidates.map((candidate) => {
+          const isSelected = selectedIds.includes(candidate.id);
+          const isCreated = candidate.status === 'created';
+          const isIgnored = candidate.status === 'ignored';
+          return `
+            <article class="meeting-assistant-task ${isSelected ? 'selected' : ''} ${isCreated ? 'created' : ''} ${isIgnored ? 'ignored' : ''}">
+              ${candidate.status === 'pending' ? `
+                <label class="meeting-assistant-checkbox" aria-label="选择待办 ${escapeAttribute(candidate.title)}">
+                  <input type="checkbox" data-meeting-assistant-task="${escapeAttribute(candidate.id)}" data-session-id="${escapeAttribute(session.id)}" data-project-id="${escapeAttribute(projectId)}" ${isSelected ? 'checked' : ''} />
+                  <span><i data-lucide="check"></i></span>
+                </label>
+              ` : `<span class="meeting-assistant-task-state"><i data-lucide="${isCreated ? 'check' : 'minus'}"></i></span>`}
+              <div>
+                <strong>${escapeHtml(candidate.title)}</strong>
+                <small>${escapeHtml(candidate.owner)} · ${escapeHtml(candidate.dueLabel)} · 来自 ${escapeHtml(candidate.evidenceTime)}</small>
+              </div>
+              ${isCreated
+                ? `<button type="button" data-issue-id="${escapeAttribute(candidate.code)}">${candidate.code}<i data-lucide="arrow-up-right"></i></button>`
+                : isIgnored
+                  ? '<em>暂不跟进</em>'
+                  : `<button type="button" class="meeting-assistant-evidence" data-toast="已定位到转写 ${escapeAttribute(candidate.evidenceTime)}">${escapeHtml(candidate.evidenceTime)}</button>`}
+            </article>
+          `;
+        }).join('')}
+      </section>
+      <footer class="meeting-assistant-footer">
+        ${pending.length ? `
+          <span>
+            <button class="meeting-assistant-text-button" type="button" data-meeting-assistant-action="select-all" data-session-id="${escapeAttribute(session.id)}" data-project-id="${escapeAttribute(projectId)}">${allPendingSelected ? '取消全选' : '全选'}</button>
+            <button class="meeting-assistant-text-button muted" type="button" data-meeting-assistant-action="skip" data-session-id="${escapeAttribute(session.id)}" data-project-id="${escapeAttribute(projectId)}">这次不跟进</button>
+          </span>
+          <div>
+            ${created.length ? `<button class="secondary-button" type="button" data-meeting-assistant-action="open-board" data-project-id="${escapeAttribute(projectId)}">前往项目看板查看</button>` : ''}
+            <button class="primary-button" type="button" data-meeting-assistant-action="track" data-session-id="${escapeAttribute(session.id)}" data-project-id="${escapeAttribute(projectId)}" ${selectedPendingCount ? '' : 'disabled'}>
+              <i data-lucide="kanban-square"></i>${selectedPendingCount ? `创建 ${selectedPendingCount} 个任务` : '选择要跟进的待办'}
+            </button>
+          </div>
+        ` : `
+          <span>${created.length ? `已将 ${created.length} 个待办写入项目看板` : '本次没有创建项目任务'}</span>
+          <div>
+            ${ignored.length ? `<button class="secondary-button" type="button" data-meeting-assistant-action="restore" data-session-id="${escapeAttribute(session.id)}" data-project-id="${escapeAttribute(projectId)}">重新选择</button>` : ''}
+            ${created.length ? `<button class="primary-button" type="button" data-meeting-assistant-action="open-board" data-project-id="${escapeAttribute(projectId)}"><i data-lucide="kanban-square"></i>前往项目看板查看</button>` : ''}
+          </div>
+        `}
+      </footer>
+    </section>
+  `;
+}
+
+function getMeetingAssistantSummaryText(project) {
+  return [
+    `会议纪要｜${meetingSummary.title}`,
+    '',
+    '会议摘要',
+    meetingSummary.overview,
+    '',
+    '明确结论',
+    ...meetingSummary.decisions.map((decision, index) => `${index + 1}. ${decision.text}`),
+    '',
+    `我还识别出 3 个待办候选，请在下方选择需要继续跟进的事项。确认后会创建到「${project.title}」项目任务看板。`,
+  ].join('\n');
 }
 
 function renderModelSelector() {
@@ -6370,7 +6550,7 @@ function renderSnackRecordProjectChoiceCard() {
   return `
     <section class="snack-record-project-choice-card" aria-label="选择是否用项目继续跟进">
       <header>
-        <div><h3>是否用项目继续跟进？</h3><p>Snack 已根据会议内容整理好一个项目。</p></div>
+        <div><h3>是否用项目继续跟进？</h3><p>Snack 已根据会议内容整理好一个项目草稿。</p></div>
         <span>1 of 2</span>
       </header>
       <div class="snack-record-project-choice-options" role="group" aria-label="项目跟进方式">
@@ -6389,22 +6569,69 @@ function renderSnackRecordProjectChoiceCard() {
   `;
 }
 
-function renderSnackRecordPreparedProjectCard(project) {
-  const memberCount = getProjectCollaborators(project).length;
-  const monitoringCount = (project.monitoringRules || []).length;
+function getSnackRecordMeetingStartDefaults(recording = null) {
+  const startedAt = recording?.startedAt || '2026-08-05T16:00:00+08:00';
+  const value = new Date(startedAt);
+  const safeDate = Number.isNaN(value.getTime()) ? new Date('2026-08-05T16:00:00+08:00') : value;
+  const weekday = safeDate.getDay();
+  const monthDay = safeDate.getDate();
+  const hour = String(safeDate.getHours()).padStart(2, '0');
+  const minute = String(safeDate.getMinutes()).padStart(2, '0');
+  return {
+    startedAt,
+    weekday,
+    weekdayLabel: ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][weekday],
+    monthDay,
+    time: `${hour}:${minute}`,
+    dateLabel: `${safeDate.getMonth() + 1}月${monthDay}日`,
+  };
+}
+
+function getSnackRecordFollowupDraft() {
+  const recording = snackRecordings.find((item) => item.id === state.snackRecordSummaryId) || null;
+  const recordingId = recording?.id || state.snackRecordSummaryId || 'meeting-summary';
+  return {
+    title: state.snackRecordFollowupProjectName.trim() || 'AI 营销增长系统',
+    summary: 'AI 营销增长周会纪要与后续跟进',
+    objective: '提升新用户首日完成率，用 20% 流量验证新版 onboarding 引导，并在周五复盘转化与次日留存。',
+    memberCount: 4,
+    monitoringCount: 2,
+    recording,
+    sessionAsset: {
+      id: `session-asset:record-summary-${recordingId}`,
+      sourceSessionId: `record-summary-${recordingId}`,
+      name: '会议纪要｜AI 营销增长周会',
+      kind: 'session',
+      sourceProject: '本次会议',
+      preview: '包含会议纪要、原始转写与行动项，确认建项后归入项目。',
+      updated: '刚刚',
+      updatedBy: currentUserName,
+      accent: '#f97316',
+      visibility: 'private',
+      sharedProjectIds: [],
+    },
+  };
+}
+
+function renderSnackRecordPreparedProjectCard(project = null) {
+  const draft = getSnackRecordFollowupDraft();
+  const memberCount = project ? getProjectCollaborators(project).length : draft.memberCount;
+  const monitoringCount = project ? (project.monitoringRules || []).length : draft.monitoringCount;
+  const title = project?.title || draft.title;
+  const objective = project?.objective || draft.objective;
   return `
     <button
       class="snack-record-prepared-project ${state.snackRecordProjectDetailOpen ? 'active' : ''}"
       type="button"
-      data-record-action="open-summary-project-detail"
-      aria-controls="recordSummaryProjectDetail"
+      data-record-action="${project ? 'open-summary-project-detail' : 'confirm-summary-project'}"
+      ${project ? 'aria-controls="recordSummaryProjectDetail"' : ''}
       aria-expanded="${state.snackRecordProjectDetailOpen ? 'true' : 'false'}"
     >
       <span class="snack-record-prepared-project-icon"><i data-lucide="folder-kanban"></i></span>
       <span class="snack-record-prepared-project-main">
-        <small>已根据会议内容准备</small>
-        <strong>${escapeHtml(project.title)}</strong>
-        <em>${escapeHtml(project.objective || project.summary)}</em>
+        <small>${project ? '项目已创建' : '项目草稿 · 待确认创建'}</small>
+        <strong>${escapeHtml(title)}</strong>
+        <em>${escapeHtml(objective)}</em>
         <span class="snack-record-prepared-project-meta">
           <span><i data-lucide="users"></i>${memberCount} 位成员</span>
           <span><i data-lucide="list-checks"></i>3 个行动项</span>
@@ -6412,8 +6639,8 @@ function renderSnackRecordPreparedProjectCard(project) {
         </span>
       </span>
       <span class="snack-record-prepared-project-action">
-        <em>查看详情</em>
-        <i data-lucide="panel-right-open"></i>
+        <em>${project ? '查看详情' : '确认创建'}</em>
+        <i data-lucide="${project ? 'panel-right-open' : 'arrow-right'}"></i>
       </span>
     </button>
   `;
@@ -6841,7 +7068,7 @@ function renderSnackRecordSummary() {
       </button>
       <article class="snack-record-minutes-document">
         <h2>会议纪要｜AI 营销增长周会</h2>
-        <p class="snack-record-minutes-meta">时间：2026-08-02 23:10<br />时长：${formatSnackRecordDuration(recording.durationSeconds)}</p>
+        <p class="snack-record-minutes-meta">时间：2026-08-05 16:00<br />时长：${formatSnackRecordDuration(recording.durationSeconds)}</p>
         <section><h3>核心结论</h3><p>本周以新用户首日完成率为核心目标，先用 20% 流量验证新版 onboarding 引导。</p></section>
         <section><h3>行动项</h3><ol><li><span>周三前完成 onboarding 引导稿</span><em>陆铭</em></li><li><span>补齐激活率数据口径与历史基线</span><em>林可</em></li><li><span>周五复盘实验转化和次日留存</span><em>田晓柔</em></li></ol></section>
       </article>
@@ -6851,9 +7078,11 @@ function renderSnackRecordSummary() {
 
   if (answers.tracking) messages.push(renderSnackRecordUserMessage(answers.tracking));
 
-  if (tracking && step >= 2 && preparedProject) {
+  if (tracking && step >= 2) {
     messages.push(renderSnackRecordAssistantMessage(`
-      <p>我已经根据会议内容准备好了项目“${escapeHtml(projectName)}”。项目目标、相关成员、会议资料和跟进规则都已整理完成；点击项目卡，可以直接在当前会话右侧查看和调整。</p>
+      <p>${preparedProject
+    ? `项目“${escapeHtml(projectName)}”已经创建，当前会议纪要已归入项目。`
+    : `我已经根据会议内容整理好了项目“${escapeHtml(projectName)}”草稿。点击卡片打开新建项目窗口，确认后才会创建项目并将当前会议纪要归入项目。`}</p>
       ${renderSnackRecordPreparedProjectCard(preparedProject)}
     `, 'is-current-step'));
   }
@@ -7027,6 +7256,7 @@ function startSnackRecordMock() {
   if (state.snackRecordActive) return;
   state.snackRecordActive = true;
   state.snackRecordSeconds = 0;
+  state.snackRecordStartedAt = new Date().toISOString();
   state.snackRecordNativeOpen = true;
   stopSnackRecordTimer();
   snackRecordTimerId = window.setInterval(() => {
@@ -7052,9 +7282,10 @@ function stopSnackRecordMock() {
   const label = `${String(now.getHours()).padStart(2, '0')}-${String(now.getMinutes()).padStart(2, '0')}`;
   const recording = {
     id: `record-mock-${Date.now()}`,
-    fileName: `临时录音 2026-08-02 ${label}.wav`,
+    fileName: `临时录音 2026-08-05 ${label}.wav`,
     transcriptFileName: null,
     createdLabel: '刚刚',
+    startedAt: state.snackRecordStartedAt || now.toISOString(),
     durationSeconds: Math.max(3, state.snackRecordSeconds),
     fileSize: `${Math.max(1.2, state.snackRecordSeconds * 0.08).toFixed(1)} MB`,
     state: 'processing',
@@ -7064,6 +7295,7 @@ function stopSnackRecordMock() {
   snackRecordings.unshift(recording);
   state.snackRecordActive = false;
   state.snackRecordSeconds = 0;
+  state.snackRecordStartedAt = null;
   state.snackRecordNativeOpen = false;
   openSnackRecordSummary(recording.id);
   showToast('录音已停止，正在同步生成转写与会议纪要');
@@ -7408,13 +7640,20 @@ function handleSnackRecordAction(target) {
     return;
   }
   if (action === 'open-summary-project-detail') {
-    const project = createSnackRecordFollowupProject();
+    const project = getProjectById(state.snackRecordSummaryProjectId);
     if (!project) return;
     state.activeProject = project.id;
     state.snackRecordProjectDetailOpen = true;
     state.memberManagerOpen = false;
     state.memberManagerQuery = '';
     renderSnackRecordFollowupUpdate();
+    return;
+  }
+  if (action === 'confirm-summary-project') {
+    openProjectCreationModal(null, {
+      source: 'record-summary',
+      recordingId: state.snackRecordSummaryId,
+    });
     return;
   }
   if (action === 'close-summary-project-detail') {
@@ -7453,10 +7692,8 @@ function handleSnackRecordAction(target) {
   if (action === 'select-record-member') return selectSnackRecordMember(target.dataset.recordMember);
   if (action === 'remove-record-member') return removeSnackRecordMember(target.dataset.recordMember);
   if (action === 'followup-track') {
-    const project = createSnackRecordFollowupProject();
-    if (!project) return;
     setSnackRecordFollowupAnswer('tracking', '用项目继续跟进', 2);
-    showToast(`项目“${project.title}”已根据会议内容准备好`);
+    showToast('项目草稿已准备好，确认后才会创建');
     return;
   }
   if (action === 'followup-save-only') return setSnackRecordFollowupAnswer('tracking', '只保存纪要', 7);
@@ -7473,6 +7710,11 @@ function getComposerProject() {
 
 function getProjectById(projectId) {
   return projectFolders.find((project) => project.id === projectId);
+}
+
+function getMeetingAssistantSession(sessionId, projectId = state.activeProject) {
+  const project = getProjectById(projectId);
+  return project?.sessions.find((session) => session.id === sessionId && session.kind === 'meeting-assistant') || null;
 }
 
 function getProjectIssues(project) {
@@ -7574,6 +7816,8 @@ function getDefaultIssueProjectId() {
 function openIssueCreationModal() {
   state.projectCreationOpen = false;
   state.projectEditingId = null;
+  state.projectCreationSource = null;
+  state.projectCreationRecordingId = null;
   state.issueCreationProjectId = getDefaultIssueProjectId();
   state.issueCreationOpen = true;
   state.openProjectMenuId = null;
@@ -7640,6 +7884,19 @@ const issueDescriptionTemplates = [
 - 预算与预警阈值：
 - 检查频率：
 - 输出要求：标记异常计划，给出停投、加预算或素材优化建议。`,
+  },
+  {
+    key: 'periodic-meeting',
+    title: '周期会议',
+    description: '会前自动汇总进展并发送简报',
+    icon: 'calendar-sync',
+    defaultTitle: '产品周会',
+    content: `【周期会议】
+- 会议目标：同步项目进展、风险和需要确认的事项
+- 固定议题：上次遗留、任务进展、关键风险、下一步动作
+- 参会人：项目核心成员
+- 会前简报来源：项目任务、项目会话、关联资产、上次会议纪要
+- 输出要求：会议助手在设定时间发送结构化会前简报。`,
   },
 ];
 
@@ -7802,7 +8059,9 @@ function selectIssueCreateOption(button) {
   closeIssueCreateSelects();
   if (selectName === 'task-type') {
     const scheduleControls = document.querySelector('[data-issue-schedule-controls]');
-    if (scheduleControls instanceof HTMLElement) scheduleControls.hidden = selectedValue !== 'scheduled';
+    const meetingControls = document.querySelector('[data-issue-meeting-controls]');
+    if (scheduleControls instanceof HTMLElement) scheduleControls.hidden = !['scheduled', 'periodic-meeting'].includes(selectedValue);
+    if (meetingControls instanceof HTMLElement) meetingControls.hidden = selectedValue !== 'periodic-meeting';
   }
   if (selectName === 'schedule-frequency') {
     const scheduleDetails = document.querySelector('[data-issue-schedule-details]');
@@ -7817,14 +8076,29 @@ function selectIssueCreateOption(button) {
 
 function applyIssueDescriptionTemplate(templateKey) {
   const template = issueDescriptionTemplates.find((item) => item.key === templateKey);
+  const titleInput = document.querySelector('[data-issue-create-title]');
   const textarea = document.querySelector('[data-issue-create-description]');
   const templateDeck = document.querySelector('[data-issue-template-deck]');
   if (!template || !(textarea instanceof HTMLTextAreaElement)) return;
   textarea.value = template.content;
+  if (template.defaultTitle && titleInput instanceof HTMLInputElement) titleInput.value = template.defaultTitle;
+  if (templateKey === 'periodic-meeting') {
+    selectIssueCreateValue('task-type', 'periodic-meeting');
+    selectIssueCreateValue('schedule-frequency', 'weekly');
+    selectIssueCreateValue('schedule-weekday', '5');
+    selectIssueCreateValue('schedule-time', '16:00');
+    selectIssueCreateValue('owner', meetingAssistantAgentName);
+  }
   resizeIssueDescriptionTextarea(textarea);
   if (templateDeck instanceof HTMLElement) templateDeck.hidden = true;
   textarea.focus();
   textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+}
+
+function selectIssueCreateValue(selectName, value) {
+  const select = document.querySelector(`[data-issue-create-select-name="${selectName}"]`);
+  const option = select?.querySelector(`[data-issue-create-select-option][data-issue-value="${value}"]`);
+  if (option instanceof HTMLButtonElement) selectIssueCreateOption(option);
 }
 
 function resizeIssueDescriptionTextarea(textarea) {
@@ -7836,8 +8110,8 @@ function resizeIssueDescriptionTextarea(textarea) {
 function renderIssueCreationModal() {
   const projectId = getProjectById(state.issueCreationProjectId)?.id || getDefaultIssueProjectId();
   const project = getProjectById(projectId);
-  const ownerOptions = getIssueOwnerOptions(projectId).map((owner) => {
-    const isAgent = owner === 'Snack' || (project?.agents || []).includes(owner) || owner.endsWith('Agent');
+  const ownerOptions = [...new Set([...getIssueOwnerOptions(projectId), meetingAssistantAgentName])].map((owner) => {
+    const isAgent = owner === 'Snack' || owner === meetingAssistantAgentName || (project?.agents || []).includes(owner) || owner.endsWith('Agent');
     return {
       value: owner,
       label: owner,
@@ -7856,6 +8130,7 @@ function renderIssueCreationModal() {
   const taskTypeOptions = [
     { value: 'manual', label: '普通任务', meta: '创建后由负责人推进', icon: 'square-check-big' },
     { value: 'scheduled', label: '定时任务', meta: '按照设定周期自动执行', icon: 'calendar-clock' },
+    { value: 'periodic-meeting', label: '周期会议', meta: '会前由会议助手发送简报', icon: 'calendar-sync' },
   ];
   return `
     <section class="issue-create-backdrop" data-issue-modal-backdrop role="presentation">
@@ -7888,6 +8163,35 @@ function renderIssueCreationModal() {
                 </div>
               </div>
             </section>
+            <section class="issue-create-meeting-controls" data-issue-meeting-controls hidden>
+              <span><i data-lucide="bot"></i><strong>会议助手</strong><small>到达会前时间后自动汇总上下文并发送简报</small></span>
+              <div>
+                ${renderIssueCreateSelect({
+    name: 'meeting-reminder',
+    label: '简报时间',
+    icon: 'bell-ring',
+    value: '60',
+    options: [
+      { value: '30', label: '提前 30 分钟', icon: 'timer' },
+      { value: '60', label: '提前 1 小时', icon: 'timer' },
+      { value: '120', label: '提前 2 小时', icon: 'timer' },
+    ],
+    compact: true,
+  })}
+                ${renderIssueCreateSelect({
+    name: 'meeting-duration',
+    label: '会议时长',
+    icon: 'clock-3',
+    value: '60',
+    options: [
+      { value: '30', label: '30 分钟', icon: 'clock-3' },
+      { value: '60', label: '60 分钟', icon: 'clock-3' },
+      { value: '90', label: '90 分钟', icon: 'clock-3' },
+    ],
+    compact: true,
+  })}
+              </div>
+            </section>
             ${renderIssueCreateSelect({ name: 'status', label: '状态', icon: 'circle-dot', value: 'backlog', options: statusOptions })}
             ${renderIssueCreateSelect({ name: 'priority', label: '优先级', icon: 'signal-high', value: 'P1', options: priorityOptions })}
             ${renderIssueCreateSelect({ name: 'owner', label: '负责人', icon: 'user-round', value: currentUserName, options: ownerOptions })}
@@ -7914,7 +8218,7 @@ function getNextManualIssueCode() {
 }
 
 function getManualIssueSchedule(formData) {
-  if (String(formData.get('issue-task-type') || '') !== 'scheduled') return null;
+  if (!['scheduled', 'periodic-meeting'].includes(String(formData.get('issue-task-type') || ''))) return null;
   const allowedFrequencies = issueScheduleFrequencyOptions.map((option) => option.value);
   const frequencyValue = String(formData.get('issue-schedule-frequency') || 'daily');
   const frequency = allowedFrequencies.includes(frequencyValue) ? frequencyValue : 'daily';
@@ -7936,6 +8240,87 @@ function getManualIssueSchedule(formData) {
   return { frequency, time, label: `每天 ${time}` };
 }
 
+function getMeetingBriefingTime(startTime, reminderMinutes) {
+  const [hours, minutes] = String(startTime || '16:00').split(':').map(Number);
+  const total = (((hours * 60) + minutes - reminderMinutes) + 1440) % 1440;
+  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+}
+
+function getDemoNextMeetingDate(schedule) {
+  const demoToday = new Date('2026-08-05T00:00:00');
+  const next = new Date(demoToday);
+  if (schedule.frequency === 'weekly') {
+    const weekday = Number(schedule.weekday);
+    const days = (weekday - demoToday.getDay() + 7) % 7 || 7;
+    next.setDate(next.getDate() + days);
+  } else if (schedule.frequency === 'monthly') {
+    next.setDate(Number(schedule.monthDay) || 1);
+    if (next <= demoToday) next.setMonth(next.getMonth() + 1);
+  } else {
+    next.setDate(next.getDate() + 1);
+  }
+  return formatMeetingDateISO(next);
+}
+
+function createPeriodicMeetingIssue(formData, project, title, description) {
+  const schedule = getManualIssueSchedule(formData);
+  if (!schedule) return;
+  const reminderMinutes = Number(formData.get('issue-meeting-reminder') || 60);
+  const duration = Number(formData.get('issue-meeting-duration') || 60);
+  const meetingTime = schedule.time || '16:00';
+  const briefingTime = getMeetingBriefingTime(meetingTime, reminderMinutes);
+  const nextDate = getDemoNextMeetingDate(schedule);
+  Object.assign(schedule, {
+    reminderMinutes,
+    duration,
+    meetingTime,
+    briefingTime,
+    nextDate,
+    cadenceLabel: schedule.label,
+  });
+  const code = getNextManualIssueCode();
+  const issue = {
+    code,
+    title: escapeAttribute(title),
+    meetingTitle: escapeAttribute(title),
+    projectId: project.id,
+    status: 'backlog',
+    issueType: '周期会议',
+    triggerType: 'cron',
+    automationKind: 'meeting-briefing',
+    triggerCount: 0,
+    schedule,
+    owner: meetingAssistantAgentName,
+    reviewer: currentUserName,
+    priority: 'P1',
+    stage: '等待会前时间',
+    tag: `${schedule.label} · 会前 ${reminderMinutes} 分钟`,
+    desc: description ? escapeAttribute(description) : `${schedule.label}召开，由会议助手在会前 ${reminderMinutes} 分钟发送简报。`,
+    count: '1/4',
+    predecessor: null,
+    relatedTasks: [],
+    source: '创建任务 / 周期会议模板',
+    nodes: [
+      { title: '周期会议已配置', state: 'done', detail: `${schedule.label}，会议时长 ${duration} 分钟。` },
+      { title: '等待会前时间', state: 'active', detail: `等待到 ${nextDate} ${briefingTime}，届时自动触发会议助手。` },
+      { title: '生成并发送会前简报', state: 'waiting', detail: '汇总项目任务、项目会话、关联资产与上次会议纪要，并发送到项目会话。' },
+      { title: '会议开始', state: 'waiting', detail: `${nextDate} ${meetingTime} 进入本次会议。` },
+    ],
+    evidence: [],
+    artifacts: ['会前简报'],
+    activity: [[currentUserName, `使用周期会议模板创建任务：${schedule.label}。`, '刚刚']],
+    comments: [],
+    logs: [`周期会议：${schedule.label}`, `会前简报：提前 ${reminderMinutes} 分钟`, `负责人：${meetingAssistantAgentName}`],
+  };
+  issues.push(issue);
+  if (!project.taskCodes.includes(code)) project.taskCodes.push(code);
+  state.issueCreationOpen = false;
+  state.issueCreationProjectId = null;
+  state.activeProject = project.id;
+  showToast('周期会议任务已创建');
+  openIssue(code);
+}
+
 function createManualIssue(form) {
   const formData = new FormData(form);
   const rawTitle = String(formData.get('issue-title') || '').trim();
@@ -7950,6 +8335,10 @@ function createManualIssue(form) {
   }
   if (!project) {
     showToast('请选择所属项目');
+    return;
+  }
+  if (String(formData.get('issue-task-type') || '') === 'periodic-meeting') {
+    createPeriodicMeetingIssue(formData, project, rawTitle, rawDescription);
     return;
   }
   const status = stateLabels[String(formData.get('issue-status'))]
@@ -8012,14 +8401,16 @@ function createManualIssue(form) {
 
 function renderProjectCreationModal() {
   const editingProject = getProjectById(state.projectEditingId);
-  const projectName = editingProject?.title || '';
-  const projectObjective = editingProject?.objective || '';
+  const recordDraft = state.projectCreationSource === 'record-summary' ? getSnackRecordFollowupDraft() : null;
+  const projectName = editingProject?.title || recordDraft?.title || '';
+  const projectObjective = editingProject?.objective || recordDraft?.objective || '';
   return `
     <section class="project-create-backdrop" data-project-modal-backdrop role="presentation">
       <form class="project-create-modal project-edit-modal" data-project-create-form role="dialog" aria-modal="true" aria-labelledby="projectCreateTitle">
         <header class="project-create-header">
           <div>
             <h2 id="projectCreateTitle">${editingProject ? '项目配置' : '新建项目'}</h2>
+            ${recordDraft ? '<p>Snack 已根据会议纪要预填项目内容，确认后才会创建项目。</p>' : ''}
           </div>
           <button class="project-create-close" type="button" aria-label="关闭${editingProject ? '项目配置' : '新建项目'}" data-project-modal-close>
             <i data-lucide="x"></i>
@@ -8045,10 +8436,11 @@ function renderProjectCreationModal() {
           ${renderProjectKnowledgeModule()}
 
           ${renderProjectLocalWorkspaceModule()}
+
         </section>
         <footer class="project-create-footer">
           <button class="secondary-button" type="button" data-project-modal-close>取消</button>
-          <button class="primary-button" type="submit" data-project-save>保存</button>
+          <button class="primary-button" type="submit" data-project-save>${recordDraft ? '确认创建' : '保存'}</button>
         </footer>
       </form>
     </section>
@@ -8473,29 +8865,40 @@ function removeMonitoringRule(button) {
   syncMonitoringRuleEmpty(list);
 }
 
-function openProjectCreationModal(projectId = null) {
+function openProjectCreationModal(projectId = null, options = {}) {
   const editingProject = getProjectById(projectId);
+  const fromRecordSummary = !editingProject && options.source === 'record-summary';
+  const recordDraft = fromRecordSummary ? getSnackRecordFollowupDraft() : null;
   state.projectCreationOpen = true;
   state.issueCreationOpen = false;
   state.issueCreationProjectId = null;
   state.projectEditingId = editingProject?.id || null;
+  state.projectCreationSource = fromRecordSummary ? 'record-summary' : null;
+  state.projectCreationRecordingId = fromRecordSummary ? (options.recordingId || state.snackRecordSummaryId) : null;
   state.projectCreationMembers = editingProject
     ? getProjectCollaborators(editingProject)
       .filter((member) => member.name !== currentUserName && member.name !== 'Snack')
       .map((member) => ({ name: member.name, isAgent: member.isAgent, role: member.role }))
-    : [];
+    : recordDraft
+      ? [
+        { name: '陆铭', isAgent: false, role: '内容负责人' },
+        { name: '林可', isAgent: false, role: '数据负责人' },
+      ]
+      : [];
   state.projectCreationWikiTopics = [...(editingProject?.wikiTopics || [])];
-  state.projectCreationSessionAssets = (editingProject?.sessionAssets || []).map((session) => ({ ...session }));
+  state.projectCreationSessionAssets = editingProject
+    ? (editingProject.sessionAssets || []).map((session) => ({ ...session }))
+    : (recordDraft ? [{ ...recordDraft.sessionAsset }] : []);
   state.projectWikiTopicPickerOpen = false;
   state.projectCreationFolders = (editingProject?.sourceFolders || []).map((folder) => (
     typeof folder === 'string' ? { name: folder, fileCount: null } : { ...folder }
   ));
   state.projectKnowledgeEditorOpen = Boolean(
-    editingProject && (
+    recordDraft || (editingProject && (
       state.projectCreationWikiTopics.length
       || state.projectCreationSessionAssets.length
       || state.projectCreationFolders.length
-    ),
+    )),
   );
   state.projectLocalWorkspacePromptOpen = false;
   state.projectMemberQuery = '';
@@ -8514,6 +8917,8 @@ function closeProjectCreationModal() {
   if (!state.projectCreationOpen) return;
   state.projectCreationOpen = false;
   state.projectEditingId = null;
+  state.projectCreationSource = null;
+  state.projectCreationRecordingId = null;
   state.projectCreationMembers = [];
   state.projectCreationWikiTopics = [];
   state.projectCreationSessionAssets = [];
@@ -8930,9 +9335,98 @@ function removeProjectMember(name) {
   refreshProjectMemberPicker({ focusSearch: state.projectMemberPickerOpen });
 }
 
+function simulateProjectBriefingTrigger(issueCode) {
+  const issue = getIssueByCode(issueCode);
+  const project = issue ? getProjectById(issue.projectId) : null;
+  if (!issue || !project || issue.automationKind !== 'meeting-briefing') return;
+  const existingSession = project.sessions.find((session) => session.id === issue.briefingSessionId);
+  if (existingSession) {
+    openProjectSession(project.id, existingSession.id);
+    return;
+  }
+  const existingAgents = project.agents || [];
+  if (!existingAgents.includes(meetingAssistantAgentName)) project.agents = [...existingAgents, meetingAssistantAgentName];
+  const rememberedPeople = new Map(project.rememberedPeople || []);
+  rememberedPeople.set(meetingAssistantAgentName, '根据项目上下文生成会前简报，并在周期会议前发送给项目成员。');
+  project.rememberedPeople = [...rememberedPeople.entries()];
+  project.agentStatuses = [
+    ...(project.agentStatuses || []).filter((item) => item[0] !== meetingAssistantAgentName),
+    [meetingAssistantAgentName, '已完成', '已整理项目上下文并发送本次会前简报'],
+  ];
+
+  const projectIssues = getProjectIssues(project).filter((item) => item.code !== issue.code);
+  const fallbackFocus = project.scenario === '会议跟进'
+    ? [
+      '确认 onboarding 引导稿最终版与 20% 流量实验范围',
+      '补齐激活率数据口径及历史基线',
+      '复盘实验转化和次日留存，确认下一轮动作',
+    ]
+    : (project.operatingRules || []).slice(0, 3).map(([title, detail]) => `${title}：${detail}`);
+  const focusItems = projectIssues.length
+    ? projectIssues.slice(0, 3).map((item) => `${item.title}：${item.stage}`)
+    : fallbackFocus;
+  const metrics = (project.monitoringRules || []).slice(0, 3).map((rule) => (
+    `${rule.metric} ${rule.operator} ${rule.value}${rule.unit || ''}`
+  ));
+  const briefing = {
+    type: 'projectBriefing',
+    issueCode: issue.code,
+    projectTitle: project.title,
+    meetingTitle: issue.meetingTitle || issue.title,
+    cadenceLabel: issue.schedule?.cadenceLabel || issue.schedule?.label || '周期会议',
+    reminderMinutes: issue.schedule?.reminderMinutes || 60,
+    simulatedAt: `${issue.schedule?.nextDate || '2026-08-07'} ${issue.schedule?.briefingTime || '15:00'}`,
+    objective: project.objective || project.summary || '对齐项目进展与下一步行动。',
+    focusItems,
+    metrics,
+  };
+  const session = {
+    id: `meeting-briefing-${state.draftSerial}`,
+    title: `${issue.meetingTitle || issue.title}｜会前简报`,
+    with: meetingAssistantAgentName,
+    updated: '刚刚',
+    icon: 'calendar-clock',
+    kind: 'meeting-briefing',
+    messages: [[
+      meetingAssistantAgentName,
+      `${issue.meetingTitle || issue.title}将在 ${issue.schedule?.meetingTime || '16:00'} 开始。我已经根据「${project.title}」的任务、项目会话、关联资产和上次会议纪要整理好本次会前简报。`,
+      issue.schedule?.briefingTime || '15:00',
+      [briefing],
+    ]],
+  };
+  state.draftSerial += 1;
+  project.sessions.unshift(session);
+  project.updated = '现在';
+  issue.triggerCount = Number(issue.triggerCount || 0) + 1;
+  issue.briefingSessionId = session.id;
+  issue.lastTriggeredAt = `${issue.schedule?.nextDate || '2026-08-07'} ${issue.schedule?.briefingTime || '15:00'}`;
+  issue.status = 'in_progress';
+  issue.stage = '会前简报已发送';
+  issue.count = '3/4';
+  issue.nodes = issue.nodes.map((node, index) => ({
+    ...node,
+    state: index < 3 ? 'done' : index === 3 ? 'active' : node.state,
+    detail: index === 1
+      ? `Demo 时间已推进到 ${issue.lastTriggeredAt}。`
+      : index === 2
+        ? `${meetingAssistantAgentName} 已汇总项目上下文，并在项目会话发送会前简报。`
+        : node.detail,
+  }));
+  issue.activity = [
+    [meetingAssistantAgentName, `已到达指定会前时间，并在项目会话发送会前简报。`, issue.schedule?.briefingTime || '15:00'],
+    ...(issue.activity || []),
+  ];
+  issue.logs = [...(issue.logs || []), `模拟时间推进：${issue.lastTriggeredAt}`, `${meetingAssistantAgentName} 已发送会前简报`];
+  issue.evidence = [...(issue.evidence || []), `会前简报会话：${session.title}`];
+  openProjectSession(project.id, session.id);
+  showToast('已模拟触发，会议助手智能体已在项目中发送简报');
+}
+
 function createNewProject(form) {
   const editingProject = getProjectById(state.projectEditingId);
   const formData = new FormData(form);
+  const projectCreationSource = state.projectCreationSource;
+  const projectCreationRecordingId = state.projectCreationRecordingId;
   const title = String(formData.get('project-name') || '').trim();
   const objective = String(formData.get('project-objective') || '').trim();
   const wikiTopics = [...(state.projectCreationWikiTopics || [])];
@@ -8993,6 +9487,8 @@ function createNewProject(form) {
     editingProject.updated = '现在';
     state.projectCreationOpen = false;
     state.projectEditingId = null;
+    state.projectCreationSource = null;
+    state.projectCreationRecordingId = null;
     state.projectCreationMembers = [];
     state.projectCreationWikiTopics = [];
     state.projectCreationSessionAssets = [];
@@ -9028,11 +9524,45 @@ function createNewProject(form) {
   project.monitoringRules = monitoringRules;
   project.operatingRules = operatingRules;
   project.pushRule = pushRule;
+  if (projectCreationSource === 'record-summary') {
+    const recording = snackRecordings.find((item) => item.id === projectCreationRecordingId);
+    project.scenario = '会议跟进';
+    project.health = '准备中';
+    project.operatingRules = [
+      ['会议结论', '会议纪要和原始转写作为项目初始依据，关键结论可回溯。'],
+      ['行动项', '负责人和截止时间由 Snack 从会议内容中整理，写入 Task Hub 前仍需确认。'],
+      ['实验复盘', '汇总 onboarding 转化与次日留存，形成下一次会议的会前简报。'],
+    ];
+    project.monitoringRules = [
+      { metric: 'onboarding 完成率', operator: '≥', value: '55', unit: '%', type: 'meeting', source: '会议目标：onboarding 完成率达到 55%' },
+      { metric: '新用户次日留存', operator: '≥', value: '38', unit: '%', type: 'meeting', source: '会议目标：新用户次日留存达到 38%' },
+    ];
+    project.monitoringType = 'meeting';
+    project.pushRule = '涉及任务创建和执行的动作仍由田晓柔确认。';
+    if (recording) {
+      const sessionId = `record-summary-${recording.id}`;
+      project.sessions = [{
+        id: sessionId,
+        title: '会议纪要｜AI 营销增长周会',
+        with: 'Snack',
+        updated: '刚刚',
+        icon: 'file-text',
+        kind: 'record-summary',
+        recordingId: recording.id,
+        messages: [],
+      }];
+      recording.summaryProjectId = projectId;
+      state.snackRecordSummaryProjectId = projectId;
+      state.snackRecordFollowupStep = Math.max(state.snackRecordFollowupStep, 3);
+    }
+  }
   state.projectSerial += 1;
   projectFolders.unshift(project);
   state.collapsedProjects = state.collapsedProjects.filter((id) => id !== projectId);
   state.projectCreationOpen = false;
   state.projectEditingId = null;
+  state.projectCreationSource = null;
+  state.projectCreationRecordingId = null;
   state.projectCreationMembers = [];
   state.projectCreationWikiTopics = [];
   state.projectCreationSessionAssets = [];
@@ -9196,6 +9726,186 @@ function submitProjectIntake(projectId) {
     return;
   }
   simulateOneOffProjectBrief(projectId, brief);
+}
+
+function fillMeetingAssistantExample(projectId = state.composerProjectId) {
+  const input = document.querySelector(`[data-meeting-assistant-input="${projectId}"]`);
+  if (!(input instanceof HTMLTextAreaElement)) return;
+  input.value = '请根据下面的会议转写生成结构化纪要，并识别需要跟进的待办：\n田晓柔：一期先完成桌面端和移动端会议录音交互原型。\n小贝：我和产品设计一起在周三前完成。\n小林：我会在周四前补齐 390px 移动端验收用例。\n田晓柔：任务不要自动创建，我选择确认后再放到项目任务看板。';
+  input.focus();
+  input.setSelectionRange(input.value.length, input.value.length);
+}
+
+function submitMeetingAssistant(projectId) {
+  const project = getProjectById(projectId);
+  const input = document.querySelector(`[data-meeting-assistant-input="${projectId}"]`);
+  if (!project || !(input instanceof HTMLTextAreaElement)) return;
+  const brief = input.value.trim();
+  if (!brief) {
+    showToast('请先粘贴会议转写并说明要生成纪要');
+    input.focus();
+    return;
+  }
+  const serial = state.draftSerial;
+  const session = {
+    id: `meeting-assistant-${serial}`,
+    title: '产品周会纪要与待办',
+    with: '会议助手',
+    updated: '刚刚',
+    icon: 'notebook-pen',
+    kind: 'meeting-assistant',
+    selectedTaskIds: [],
+    taskCandidates: [
+      {
+        id: `meeting-followup-${serial}-1`,
+        code: `MTG-${400 + serial * 10 + 1}`,
+        title: '完成桌面端与移动端会议录音交互原型',
+        owner: '前端工程师-小贝、产品设计 Agent',
+        dueDate: '2026-08-05',
+        dueLabel: '8 月 5 日',
+        evidenceTime: '00:23:18',
+        status: 'pending',
+      },
+      {
+        id: `meeting-followup-${serial}-2`,
+        code: `MTG-${400 + serial * 10 + 2}`,
+        title: '补充 390px 移动端会议流程验收用例',
+        owner: 'QA-小林',
+        dueDate: '2026-08-06',
+        dueLabel: '8 月 6 日',
+        evidenceTime: '00:27:04',
+        status: 'pending',
+      },
+      {
+        id: `meeting-followup-${serial}-3`,
+        code: `MTG-${400 + serial * 10 + 3}`,
+        title: '验证移动端录音系统权限方案',
+        owner: '研发交付 Agent',
+        dueDate: '2026-08-07',
+        dueLabel: '8 月 7 日',
+        evidenceTime: '00:00:58',
+        status: 'pending',
+      },
+    ],
+    messages: [
+      [currentUserName, brief, '刚刚'],
+      [
+        '会议助手',
+        getMeetingAssistantSummaryText(project),
+        '刚刚',
+        [{ type: 'meetingAssistantResult', sessionId: `meeting-assistant-${serial}` }],
+      ],
+    ],
+  };
+  state.draftSerial += 1;
+  project.sessions.unshift(session);
+  project.updated = '现在';
+  state.collapsedProjects = state.collapsedProjects.filter((id) => id !== projectId);
+  state.projectChatDraftProjectId = null;
+  state.projectChatDraft = '';
+  state.selectedAgent = '会议助手';
+  openProjectSession(projectId, session.id);
+  showToast('会议纪要已生成，请选择要跟进的待办');
+}
+
+function updateMeetingAssistantSelection(target) {
+  const session = getMeetingAssistantSession(target.dataset.sessionId, target.dataset.projectId);
+  if (!session) return;
+  session.selectedTaskIds = target.checked
+    ? [...new Set([...(session.selectedTaskIds || []), target.dataset.meetingAssistantTask])]
+    : (session.selectedTaskIds || []).filter((id) => id !== target.dataset.meetingAssistantTask);
+  render();
+}
+
+function handleMeetingAssistantAction(action, sessionId, projectId) {
+  const project = getProjectById(projectId);
+  if (action === 'open-board') {
+    if (project) openProject(projectId);
+    return;
+  }
+  const session = getMeetingAssistantSession(sessionId, projectId);
+  if (!session || !project) return;
+  const pending = session.taskCandidates.filter((candidate) => candidate.status === 'pending');
+  if (action === 'select-all') {
+    const pendingIds = pending.map((candidate) => candidate.id);
+    const allSelected = pendingIds.length && pendingIds.every((id) => session.selectedTaskIds.includes(id));
+    session.selectedTaskIds = allSelected ? [] : pendingIds;
+    render();
+    return;
+  }
+  if (action === 'skip') {
+    pending.forEach((candidate) => { candidate.status = 'ignored'; });
+    session.selectedTaskIds = [];
+    render();
+    showToast('本次待办已保留在纪要中，不会创建项目任务');
+    return;
+  }
+  if (action === 'restore') {
+    session.taskCandidates.forEach((candidate) => {
+      if (candidate.status === 'ignored') candidate.status = 'pending';
+    });
+    session.selectedTaskIds = [];
+    render();
+    return;
+  }
+  if (action !== 'track') return;
+  const selected = pending.filter((candidate) => session.selectedTaskIds.includes(candidate.id));
+  if (!selected.length) {
+    showToast('请至少选择一个要跟进的待办');
+    return;
+  }
+  selected.forEach((candidate) => createMeetingAssistantIssue(candidate, project));
+  pending
+    .filter((candidate) => !session.selectedTaskIds.includes(candidate.id))
+    .forEach((candidate) => { candidate.status = 'ignored'; });
+  session.selectedTaskIds = [];
+  session.updated = '刚刚';
+  project.updated = '现在';
+  render();
+  showToast(`已创建 ${selected.length} 个项目任务`);
+}
+
+function createMeetingAssistantIssue(candidate, project) {
+  if (issues.some((issue) => issue.code === candidate.code)) {
+    candidate.status = 'created';
+    if (!project.taskCodes.includes(candidate.code)) project.taskCodes.push(candidate.code);
+    return;
+  }
+  issues.push({
+    code: candidate.code,
+    title: candidate.title,
+    projectId: project.id,
+    status: 'backlog',
+    issueType: '会议待办',
+    owner: candidate.owner,
+    reviewer: currentUserName,
+    priority: 'P1',
+    stage: '待开始',
+    tag: '会议纪要',
+    desc: `${candidate.title}。由会议助手从转写中识别，并经 ${currentUserName} 选择确认后创建。`,
+    count: '2/4',
+    predecessor: null,
+    relatedTasks: [],
+    source: `会议转写 ${candidate.evidenceTime}`,
+    dueDate: candidate.dueDate,
+    dueLabel: candidate.dueLabel,
+    nodes: [
+      { title: '会议中提出', state: 'done', detail: `来自会议转写 ${candidate.evidenceTime}。` },
+      { title: '确认跟进', state: 'done', detail: `${currentUserName} 已选择将此待办转为项目任务。` },
+      { title: '任务执行', state: 'waiting', detail: `${candidate.owner} 负责推进，截止时间 ${candidate.dueLabel}。` },
+      { title: '结果复核', state: 'waiting', detail: `完成后由 ${currentUserName} 复核并回写会议结论。` },
+    ],
+    evidence: [`原始会议转写 ${candidate.evidenceTime}`, '会议助手待办识别结果', '人工选择确认记录'],
+    artifacts: ['会议纪要', '原始转写片段'],
+    activity: [
+      ['会议助手', `从会议转写 ${candidate.evidenceTime} 识别出待办。`, '刚刚'],
+      [currentUserName, '已选择继续跟进，并创建到项目任务看板。', '刚刚'],
+    ],
+    comments: [],
+    logs: [`来源：会议转写 ${candidate.evidenceTime}`, `负责人：${candidate.owner}`],
+  });
+  project.taskCodes.push(candidate.code);
+  candidate.status = 'created';
 }
 
 function isContinuousProjectBrief(brief) {
@@ -9599,8 +10309,7 @@ function openProjectSession(projectId, sessionId) {
   if (sessionId === 'meeting-schedule') {
     state.meetingReturnView = 'projectBoard';
     state.taskTab = 'schedule';
-    state.selectedMeetingId = isMeetingSetupCompleted(projectId) ? state.selectedMeetingId : null;
-    getMeetingSetupDraft(projectId);
+    state.selectedMeetingId = null;
   }
   state.activeProject = projectId;
   state.activeSession = sessionId === 'meeting-schedule' ? null : sessionId;
@@ -9814,6 +10523,7 @@ function createSingleChat(projectId) {
   state.openProjectCreateMenuId = null;
   state.view = 'chat';
   state.activeProject = projectId;
+  state.composerProjectId = projectId;
   state.selectedAgent = agentName;
   state.activeSession = null;
   state.activeIssue = null;
@@ -10958,7 +11668,7 @@ function handleBodyClick(event) {
   if (shouldCloseProjectAssetMore) state.projectAssetMoreOpen = null;
   const sessionImportTarget = event.target.closest('[data-project-session-import-open], [data-project-session-import-close], [data-project-session-import-backdrop], [data-project-session-import-option], [data-project-session-import-search]');
   const projectPickerTarget = event.target.closest('[data-project-picker]');
-  const target = sessionImportTarget || projectPickerTarget || event.target.closest('[data-view], [data-create-project], [data-project-config], [data-project-detail-sidebar], [data-project-detail-tab], [data-project-modal-close], [data-project-modal-backdrop], [data-project-group-chat-open], [data-project-group-chat-close], [data-project-group-chat-backdrop], [data-project-group-chat-filter], [data-project-group-chat-option], [data-project-group-chat-complete], [data-project-group-enter], [data-project-group-action], [data-project-group-page], [data-project-group-members-close], [data-project-group-members-backdrop], [data-project-group-members-add], [data-project-group-members-remove], [data-project-group-modal-close], [data-project-group-modal-backdrop], [data-project-group-modal-action], [data-project-collaborator-manager], [data-project-collaborator-add], [data-project-collaborator-option], [data-project-collaborator-permission], [data-project-collaborator-permission-value], [data-create-issue], [data-issue-create-select-toggle], [data-issue-create-select-option], [data-issue-modal-close], [data-issue-modal-backdrop], [data-local-knowledge-backdrop], [data-close-local-knowledge], [data-open-local-knowledge], [data-open-local-folder], [data-submit-local-knowledge], [data-project-asset-more], [data-project-asset-action], [data-project-asset-bulk-action], [data-project-asset-share-close], [data-project-asset-share-save], [data-project-knowledge-picker-toggle], [data-project-knowledge-topic], [data-project-wiki-topic-create], [data-project-folder-remove], [data-project-config-asset-remove], [data-project-wiki-topic-toggle], [data-project-wiki-topic-option], [data-project-knowledge-add], [data-project-local-workspace-toggle], [data-project-local-workspace-select], [data-project-members-add], [data-project-member-picker], [data-project-member-add], [data-project-member-search], [data-project-member-option], [data-project-member-remove], [data-snack-desktop-download], [data-monitoring-rule-recognize], [data-monitoring-rule-edit], [data-monitoring-rule-remove], [data-project-intake-submit], [data-meeting-intake-submit], [data-mock-action], [data-confirmation-action], [data-confirmation-cancel], [data-model-menu], [data-model-select], [data-project-context], [data-project-context-empty], [data-project-picker-search], [data-agent-status-toggle], [data-task-tab], [data-task-filter], [data-project-board-tab], [data-issue-tab], [data-close-issue-tab], [data-todo-inbox-issue], [data-issue-id], [data-log-doc], [data-close-log-doc], [data-project-open], [data-project-toggle], [data-project-sessions], [data-project-session], [data-project-menu], [data-project-action], [data-project-create-menu], [data-project-create-action], [data-loose-session], [data-board-sidebar], [data-member-sidebar], [data-member-tab], [data-member-manager-toggle], [data-member-manager-add], [data-member-manager-remove], [data-agent-tab], [data-agent-chat], [data-agent-menu], [data-agent-select], [data-resource-tab], [data-toast]');
+  const target = sessionImportTarget || projectPickerTarget || event.target.closest('[data-view], [data-create-project], [data-project-config], [data-project-detail-sidebar], [data-project-detail-tab], [data-project-modal-close], [data-project-modal-backdrop], [data-project-group-chat-open], [data-project-group-chat-close], [data-project-group-chat-backdrop], [data-project-group-chat-filter], [data-project-group-chat-option], [data-project-group-chat-complete], [data-project-group-enter], [data-project-group-action], [data-project-group-page], [data-project-group-members-close], [data-project-group-members-backdrop], [data-project-group-members-add], [data-project-group-members-remove], [data-project-group-modal-close], [data-project-group-modal-backdrop], [data-project-group-modal-action], [data-project-collaborator-manager], [data-project-collaborator-add], [data-project-collaborator-option], [data-project-collaborator-permission], [data-project-collaborator-permission-value], [data-create-issue], [data-briefing-simulate-trigger], [data-issue-create-select-toggle], [data-issue-create-select-option], [data-issue-modal-close], [data-issue-modal-backdrop], [data-local-knowledge-backdrop], [data-close-local-knowledge], [data-open-local-knowledge], [data-open-local-folder], [data-submit-local-knowledge], [data-project-asset-more], [data-project-asset-action], [data-project-asset-bulk-action], [data-project-asset-share-close], [data-project-asset-share-save], [data-project-knowledge-picker-toggle], [data-project-knowledge-topic], [data-project-wiki-topic-create], [data-project-folder-remove], [data-project-config-asset-remove], [data-project-wiki-topic-toggle], [data-project-wiki-topic-option], [data-project-knowledge-add], [data-project-local-workspace-toggle], [data-project-local-workspace-select], [data-project-members-add], [data-project-member-picker], [data-project-member-add], [data-project-member-search], [data-project-member-option], [data-project-member-remove], [data-snack-desktop-download], [data-monitoring-rule-recognize], [data-monitoring-rule-edit], [data-monitoring-rule-remove], [data-project-intake-submit], [data-meeting-intake-submit], [data-meeting-assistant-submit], [data-meeting-assistant-example], [data-meeting-assistant-action], [data-mock-action], [data-confirmation-action], [data-confirmation-cancel], [data-model-menu], [data-model-select], [data-project-context], [data-project-context-empty], [data-project-picker-search], [data-agent-status-toggle], [data-task-tab], [data-task-filter], [data-project-board-tab], [data-issue-tab], [data-close-issue-tab], [data-todo-inbox-issue], [data-issue-id], [data-log-doc], [data-close-log-doc], [data-project-open], [data-project-toggle], [data-project-sessions], [data-project-session], [data-project-menu], [data-project-action], [data-project-create-menu], [data-project-create-action], [data-loose-session], [data-board-sidebar], [data-member-sidebar], [data-member-tab], [data-member-manager-toggle], [data-member-manager-add], [data-member-manager-remove], [data-agent-tab], [data-agent-chat], [data-agent-menu], [data-agent-select], [data-resource-tab], [data-toast]');
   if (!target) {
     if (state.projectCollaboratorPermissionMember) {
       state.projectCollaboratorPermissionMember = null;
@@ -11090,6 +11800,7 @@ function handleBodyClick(event) {
     render();
     return;
   }
+  if (target.dataset.briefingSimulateTrigger) return simulateProjectBriefingTrigger(target.dataset.briefingSimulateTrigger);
   if (target.dataset.createIssue !== undefined) return openIssueCreationModal();
   if (target.dataset.projectKnowledgePickerToggle) return toggleProjectKnowledgeAttachPicker(target.dataset.projectKnowledgePickerToggle);
   if (target.dataset.projectKnowledgeTopic) return attachProjectKnowledgeTopic(target.dataset.projectId, target.dataset.projectKnowledgeTopic);
@@ -11140,6 +11851,9 @@ function handleBodyClick(event) {
   if (target.dataset.projectCreateAction) return runProjectCreateAction(target.dataset.projectCreateAction, target.dataset.projectId);
   if (target.dataset.projectIntakeSubmit) return submitProjectIntake(target.dataset.projectIntakeSubmit);
   if (target.dataset.meetingIntakeSubmit !== undefined) return submitMeetingIntake(target.dataset.projectId, target.dataset.sessionId);
+  if (target.dataset.meetingAssistantSubmit) return submitMeetingAssistant(target.dataset.meetingAssistantSubmit);
+  if (target.dataset.meetingAssistantExample !== undefined) return fillMeetingAssistantExample();
+  if (target.dataset.meetingAssistantAction) return handleMeetingAssistantAction(target.dataset.meetingAssistantAction, target.dataset.sessionId, target.dataset.projectId);
   if (target.dataset.mockAction === 'complexBrief') return simulateComplexTaskBrief(target.dataset.projectId);
   if (target.dataset.mockAction === 'confirmSetup') return confirmProjectSetup(target.dataset.projectId);
   if (target.dataset.confirmationAction === 'confirm') return confirmIssueExecution(target.dataset.issueCode);
@@ -11334,6 +12048,10 @@ document.body.addEventListener('input', (event) => {
 });
 document.body.addEventListener('change', (event) => {
   const target = event.target;
+  if (target instanceof HTMLInputElement && target.dataset.meetingAssistantTask !== undefined) {
+    updateMeetingAssistantSelection(target);
+    return;
+  }
   if (target instanceof HTMLInputElement && target.dataset.projectAssetSelect !== undefined) {
     const projectId = target.dataset.projectId;
     const assetId = target.dataset.projectAssetId;
@@ -11443,6 +12161,11 @@ document.body.addEventListener('focusout', (event) => {
   }
 });
 document.body.addEventListener('keydown', (event) => {
+  if (event.target instanceof HTMLTextAreaElement && event.target.dataset.meetingAssistantInput && event.key === 'Enter' && !event.shiftKey) {
+    event.preventDefault();
+    submitMeetingAssistant(event.target.dataset.meetingAssistantInput);
+    return;
+  }
   if (event.key === 'Escape' && state.projectGroupMembersModal) {
     event.preventDefault();
     closeProjectGroupMembersModal();
